@@ -273,7 +273,17 @@ const server = http.createServer(async (req, res) => {
   }
 
   const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  const pathname = parsedUrl.pathname;
+  const rawPathname = parsedUrl.pathname;
+
+  // Pastikan akses `/absen` tanpa garis miring otomatis diarahkan ke `/absen/`
+  // supaya file `./assets/...` tetap berada di dalam `/absen/assets/...` dan tidak bentrok dengan `/radio`
+  if (/^\/(absen|hr|guru|challenge)$/i.test(rawPathname)) {
+    res.writeHead(302, { Location: `${rawPathname}/${parsedUrl.search || ''}` });
+    return res.end();
+  }
+
+  // Normalisasi subpath agar `app.flowsalon.id/absen/`, `app.flowsalon.id/hr/`, dll. berjalan mulus
+  const pathname = rawPathname.replace(/^\/(absen|hr|guru|challenge)(?=\/|$)/i, '') || '/';
 
   // 1. Layani file foto selfie dari /uploads/absen/
   if (pathname.startsWith('/uploads/absen/')) {

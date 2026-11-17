@@ -1,0 +1,228 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Flow Port">
+    <meta name="theme-color" content="#000000">
+    
+    <!-- PWA & Icons Configuration -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
+    <link rel="shortcut icon" href="icon-192.png">
+    
+    <title>Flow Port</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Jost:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet" crossorigin="anonymous">
+    <style>
+        :root {
+            --safe-top: env(safe-area-inset-top);
+            --safe-bottom: env(safe-area-inset-bottom);
+        }
+
+        * { 
+            -webkit-tap-highlight-color: transparent; 
+            box-sizing: border-box; 
+            font-family: 'Futura PT', 'Futura PT Light', 'Futura PT Book', 'Futura PT Medium', 'Futura', 'Futura-Light', 'Jost', 'Century Gothic', -apple-system, BlinkMacSystemFont, sans-serif !important; 
+        }
+        html { height: 100%; background-color: #000; }
+        body { 
+            margin: 0; 
+            padding: 0; 
+            min-height: 100vh; 
+            overflow-x: hidden; 
+            font-family: 'Futura PT', 'Futura PT Light', 'Futura PT Book', 'Futura PT Medium', 'Futura', 'Futura-Light', 'Jost', 'Century Gothic', -apple-system, BlinkMacSystemFont, sans-serif !important; 
+            color: white; 
+            user-select: none; 
+            background: transparent !important; 
+        }
+
+        /* Typography rules to ensure only Futura PT Light, Book, and Medium are used */
+        /* Futura PT Light (300) */
+        .font-light, .font-thin, .font-extralight {
+            font-weight: 300 !important;
+        }
+        /* Futura PT Book (400) */
+        .font-normal, .font-book {
+            font-weight: 400 !important;
+        }
+        /* Futura PT Medium (500) */
+        .font-medium {
+            font-weight: 500 !important;
+        }
+        /* Map bold/black weights to Medium (500) to keep it elegant and prevent chunky fonts */
+        .font-semibold, .font-bold, .font-extrabold, .font-black {
+            font-weight: 500 !important;
+        }
+
+        /* For very large fonts, force Futura Light (300) weight */
+        .text-xl, .text-2xl, .text-3xl, .text-4xl, .text-5xl, .text-6xl, .text-7xl, .text-8xl, .text-[1.5rem], .text-[2rem], .text-[3rem], .text-[4rem] {
+            font-weight: 300 !important;
+        }
+        
+        .fixed-bg { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-size: cover; background-position: center; z-index: -10; filter: brightness(0.6); }
+        
+        /* LIQUID GLASS */
+        .glass-card, .glass-square-btn, .glass-button, .camera-circle-frame {
+            background: 
+                radial-gradient(circle at 0% 0%, rgba(255, 255, 255, 0.1) 0%, transparent 40%),
+                radial-gradient(circle at 100% 100%, rgba(255, 255, 255, 0.03) 0%, transparent 20%),
+                rgba(255, 255, 255, 0.02) !important;
+            backdrop-filter: blur(24px) saturate(160%) brightness(105%) !important;
+            border: 0.5px solid rgba(255, 255, 255, 0.2) !important;
+            box-shadow: 
+                inset 0.5px 0.5px 1px rgba(255, 255, 255, 0.1), 
+                inset -0.5px -0.5px 0.5px rgba(255, 255, 255, 0.05), 
+                0 0 0 transparent !important;
+            position: relative;
+            transition: all 0.3s cubic-bezier(0.2, 0, 0.2, 1);
+        }
+
+        .glass-input { 
+            background: rgba(0, 0, 0, 0.25) !important; 
+            border-radius: 1.25rem !important; 
+            color: white !important; 
+            outline: none !important; 
+            width: 100%; 
+            padding: 0 1.5rem; 
+            font-weight: 600; 
+            height: 4.5rem; 
+            box-shadow: 
+                inset 6px 6px 15px rgba(0, 0, 0, 0.75), 
+                inset -2px -2px 5px rgba(255, 255, 255, 0.08), 
+                0 0.5px 0.5px rgba(255, 255, 255, 0.03) !important; 
+            border: 1px solid rgba(255, 255, 255, 0.02) !important; 
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            appearance: none;
+            backdrop-filter: blur(15px);
+        }
+
+        .ios-icon-frame {
+            width: 86px;
+            height: 86px;
+            border-radius: 1.8rem;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.04));
+            backdrop-filter: blur(25px);
+            border: 0.5px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 
+                inset 1.2px 1.2px 2px rgba(255, 255, 255, 0.3),
+                inset -0.5px -0.5px 1px rgba(255, 255, 255, 0.1);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .ios-icon-frame img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            padding: 2px;
+        }
+
+        .glass-button { 
+            border-radius: 1.5rem !important; 
+            font-weight: 800 !important; 
+            text-transform: uppercase; 
+            letter-spacing: 0.3em !important; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-size: 11px; 
+            height: 4.5rem; 
+        }
+        
+        .active-emerald-tab { 
+            background: rgba(16, 185, 129, 0.75) !important; 
+            color: #ffffff !important; 
+            border: 1px solid rgba(255, 255, 255, 0.3) !important;
+            backdrop-filter: blur(12px) saturate(140%) brightness(105%) !important;
+            box-shadow: 
+                inset 0.5px 0.5px 1.5px rgba(255, 255, 255, 0.4),
+                inset -0.5px -0.5px 1.5px rgba(0, 0, 0, 0.1),
+                0 4px 10px rgba(16, 185, 129, 0.2) !important;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+        }
+
+        .glass-button.active-emerald-tab {
+            border-radius: 1rem !important; /* Rounded tapi tidak kapsul */
+            transform: scale(1);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .glass-button.active-emerald-tab:active {
+            transform: scale(0.97);
+            box-shadow: 
+                inset 2px 2px 5px rgba(0, 0, 0, 0.2),
+                0 2px 5px rgba(4, 120, 87, 0.2) !important;
+        }
+
+        .text-emerald-glow { color: #34d399 !important; text-shadow: 0 0 10px rgba(52, 211, 153, 0.3); }
+        
+        .camera-circle-frame {
+            position: relative;
+            width: 270px;
+            height: 270px;
+            border-radius: 50% !important;
+            overflow: hidden !important; 
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            cursor: pointer;
+            border: 1px solid rgba(255,255,255,0.2) !important;
+        }
+
+        .camera-circle-frame > video, .camera-circle-frame > img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%;
+        }
+
+        @keyframes breathing {
+            0% { opacity: 0.3; transform: scale(0.96); }
+            50% { opacity: 1; transform: scale(1.04); }
+            100% { opacity: 0.3; transform: scale(0.96); }
+        }
+
+        .animate-breathing {
+            animation: breathing 3s ease-in-out infinite;
+        }
+
+        .pt-safe { padding-top: var(--safe-top); }
+        .pb-safe { padding-bottom: var(--safe-bottom); }
+        .mt-safe { margin-top: var(--safe-top); }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        ::-webkit-scrollbar { width: 0px; background: transparent; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+</body>
+</html>

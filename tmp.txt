@@ -1,0 +1,26 @@
+      Object.keys(dailyGroups).forEach(dayKey => {
+        const group = dailyGroups[dayKey];
+        const netLayanan = Math.max(0, group.omset - group.prod);
+        const points = Math.floor(netLayanan / 500000);
+        pt_from_import_komisi += points;
+
+        totalOmsetLayananMonth += netLayanan;
+
+        // Calculate product commission based on rules
+        let dailyKomisiProduk = 0;
+        if (group.prodEntries && group.prodEntries.length > 0) {
+          group.prodEntries.forEach(entry => {
+            if (entry.komisi && entry.komisi > 0) {
+              dailyKomisiProduk += entry.komisi;
+            } else {
+              const info = getProductPointAndKomisiBackend(entry, pointProduk);
+              dailyKomisiProduk += info.komisi * entry.qty;
+            }
+          });
+        }
+
+        const komisiLayanan = Math.max(0, group.komisi - dailyKomisiProduk);
+
+        totalKomisiLayananMonth += komisiLayanan;
+        totalKomisiProdukMonth += dailyKomisiProduk;
+      });

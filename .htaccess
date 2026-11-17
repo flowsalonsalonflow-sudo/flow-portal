@@ -1,0 +1,25 @@
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  
+  # Kunci RewriteBase ke folder /absenku/
+  RewriteBase /absenku/
+  
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /absenku/index.html [L]
+</IfModule>
+
+# Keamanan tambahan: Melindungi file sensitif
+<FilesMatch "^\.">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Mengatur cache untuk performa lebih cepat
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresDefault "access plus 1 month"
+    ExpiresByType text/html "access plus 0 seconds"
+</IfModule>

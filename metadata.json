@@ -1,0 +1,11 @@
+{
+  "name": "Flow Port v3",
+  "description": "Portal terpadu untuk karyawan Flow Salon yang mencakup absensi, manajemen gaji, checklist tugas harian/mingguan/bulanan berdasarkan divisi, dan basis pengetahuan SOP bertenaga AI.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

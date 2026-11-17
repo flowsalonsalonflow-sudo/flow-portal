@@ -1,0 +1,299 @@
+tugasDef: [
+  {
+    "Manager": "Manager",
+    "manager": "Manager",
+    "Mingguan": "Mingguan",
+    "mingguan": "Mingguan",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[SELASA] Menyuruh orang membersihkan Grase Trap",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[SELASA] Menyuruh orang membersihkan Grase Trap",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[SELASA] Menyuruh orang membersihkan Grase Trap"
+  },
+  {
+    "Manager": "Manager",
+    "manager": "Manager",
+    "Mingguan": "Mingguan",
+    "mingguan": "Mingguan",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[RABU] Memlaporkan bahan-bahan low stock",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[RABU] Memlaporkan bahan-bahan low stock",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[RABU] Memlaporkan bahan-bahan low stock"
+  },
+  {
+    "Manager": "Manager",
+    "manager": "Manager",
+    "Mingguan": "Bulanan",
+    "mingguan": "Bulanan",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[Tgl 3] Memberi penilaian kinerja staff",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[Tgl 3] Memberi penilaian kinerja staff",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[Tgl 3] Memberi penilaian kinerja staff"
+  },
+  {
+    "Manager": "Manager",
+    "manager": "Manager",
+    "Mingguan": "Bulanan",
+    "mingguan": "Bulanan",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[Tgl 25] Diskusi rencana promo buat bulan depan dengan owner.",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[Tgl 25] Diskusi rencana promo buat bulan depan dengan owner.",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[Tgl 25] Diskusi rencana promo buat bulan depan dengan owner."
+  },
+  {
+    "Manager": "Sosmed Video",
+    "manager": "Sosmed Video",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "Upload minimal 2 story (interaksi, testimonials, live story",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "Upload minimal 2 story (interaksi, testimonials, live story",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "Upload minimal 2 story (interaksi, testimonials, live story"
+  },
+  {
+    "Manager": "Sosmed Video",
+    "manager": "Sosmed Video",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "Dokumentasikan minimal 1 customer/service",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "Dokumentasikan minimal 1 customer/service",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "Dokumentasikan minimal 1 customer/service"
+  },
+  {
+    "Manager": "Sosmed Video",
+    "manager": "Sosmed Video",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "Buat 1 reels storytelling/trend",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "Buat 1 reels storytelling/trend",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "Buat 1 reels storytelling/trend"
+  },
+  {
+    "Manager": "Sosmed Video",
+    "manager": "Sosmed Video",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "Upload footage yang bagus ke drive",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "Upload footage yang bagus ke drive",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "Upload footage yang bagus ke drive"
+  },
+  {
+    "Manager": "Sosmed Video",
+    "manager": "Sosmed Video",
+    "Mingguan": "Mingguan",
+    "mingguan": "Mingguan",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[Rabu] Sebutkan 3 referensi trend baru laporan di discord",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[Rabu] Sebutkan 3 referensi trend baru laporan di discord",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[Rabu] Sebutkan 3 referensi trend baru laporan di discord"
+  },
+  {
+    "Manager": "Sosmed Video",
+    "manager": "Sosmed Video",
+    "Mingguan": "Mingguan",
+    "mingguan": "Mingguan",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[Jum'at] Live IG dan Tiktok ",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[Jum'at] Live IG dan Tiktok ",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[Jum'at] Live IG dan Tiktok "
+  },
+  {
+    "Manager": "Sosmed Video",
+    "manager": "Sosmed Video",
+    "Mingguan": "Mingguan",
+    "mingguan": "Mingguan",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[Minggu] Evaluasi reels performa terbaik minggu ini (selain promo), laporan di discord",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[Minggu] Evaluasi reels performa terbaik minggu ini (selain promo), laporan di discord",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[Minggu] Evaluasi reels performa terbaik minggu ini (selain promo), laporan di discord"
+  },
+  {
+    "Manager": "Sosmed Video",
+    "manager": "Sosmed Video",
+    "Mingguan": "Bulanan",
+    "mingguan": "Bulanan",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[Tgl 30/31] Analisa konten Flow paling viral bulan ini (selain promo), laporan di discord",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[Tgl 30/31] Analisa konten Flow paling viral bulan ini (selain promo), laporan di discord",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[Tgl 30/31] Analisa konten Flow paling viral bulan ini (selain promo), laporan di discord"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[8] Update slot (dijadwalkan hari sebelumnya)",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[8] Update slot (dijadwalkan hari sebelumnya)",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[8] Update slot (dijadwalkan hari sebelumnya)"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[9-10] Story seluruh promo yang sedang berlaku, rapihkan pin dan highligt. Update promo dan foto di google maps.",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[9-10] Story seluruh promo yang sedang berlaku, rapihkan pin dan highligt. Update promo dan foto di google maps.",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[9-10] Story seluruh promo yang sedang berlaku, rapihkan pin dan highligt. Update promo dan foto di google maps."
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[10-11] Buat 1 carousel",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[10-11] Buat 1 carousel",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[10-11] Buat 1 carousel"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[11] Update slot",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[11] Update slot",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[11] Update slot"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[11-12] Repost tag dari customer / selebgram. 1 cst maksimal 1.",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[11-12] Repost tag dari customer / selebgram. 1 cst maksimal 1.",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[11-12] Repost tag dari customer / selebgram. 1 cst maksimal 1."
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[12-13] Ishoma",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[12-13] Ishoma",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[12-13] Ishoma"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[13-14] Buat 1 reels",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[13-14] Buat 1 reels",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[13-14] Buat 1 reels"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[14] Update slot",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[14] Update slot",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[14] Update slot"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[14-15] Buat konten interaksi",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[14-15] Buat konten interaksi",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[14-15] Buat konten interaksi"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[15-16] Ishoma",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[15-16] Ishoma",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[15-16] Ishoma"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[16] Repost tag dari customer / selebgram. 1 cst maksimal 1",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[16] Repost tag dari customer / selebgram. 1 cst maksimal 1",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[16] Repost tag dari customer / selebgram. 1 cst maksimal 1"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[16-17] Buat 1 carousel (kalau promo + web)",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[16-17] Buat 1 carousel (kalau promo + web)",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[16-17] Buat 1 carousel (kalau promo + web)"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[17] Update slot",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[17] Update slot",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[17] Update slot"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[18-19] Ishoma",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[18-19] Ishoma",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[18-19] Ishoma"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[19-20] Update slot untuk besok, posting promo baru (kalau ada), update web",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[19-20] Update slot untuk besok, posting promo baru (kalau ada), update web",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[19-20] Update slot untuk besok, posting promo baru (kalau ada), update web"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Harian",
+    "mingguan": "Harian",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "[20-21] Repost tag dari customer / selebgram. 1 cst maksimal 1",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "[20-21] Repost tag dari customer / selebgram. 1 cst maksimal 1",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "[20-21] Repost tag dari customer / selebgram. 1 cst maksimal 1"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Mingguan",
+    "mingguan": "Mingguan",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "Riset referensi desain kompetitor",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "Riset referensi desain kompetitor",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "Riset referensi desain kompetitor"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Mingguan",
+    "mingguan": "Mingguan",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "Bersihkan footage tidak terpakai",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "Bersihkan footage tidak terpakai",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "Bersihkan footage tidak terpakai"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Bulanan",
+    "mingguan": "Bulanan",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "Buat 10 template reusable baru",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "Buat 10 template reusable baru",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "Buat 10 template reusable baru"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Bulanan",
+    "mingguan": "Bulanan",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "Rapikan asset desain",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "Rapikan asset desain",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "Rapikan asset desain"
+  },
+  {
+    "Manager": "Sosmed Design",
+    "manager": "Sosmed Design",
+    "Mingguan": "Bulanan",
+    "mingguan": "Bulanan",
+    "[SENIN] Memastikan produk salon dan bahan treatment tersedia untuk 7 hari kedepan": "Evaluasi desain dengan performa terbaik",
+    "[senin]_memastikan_produk_salon_dan_bahan_treatment_tersedia_untuk_7_hari_kedepan": "Evaluasi desain dengan performa terbaik",
+    "[senin]memastikanproduksalondanbahantreatmenttersediauntuk7harikedepan": "Evaluasi desain dengan performa terbaik"
+  }
+]

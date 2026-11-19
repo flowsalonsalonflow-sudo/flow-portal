@@ -43,6 +43,8 @@ loadEnv();
 const PORT = Number(process.env.PORT || 3001);
 const DEFAULT_GAS_URL =
   'https://script.google.com/macros/s/AKfycby7_TYAxQcEhY9qDb2MhtIWaigpzyG08FnYTuRvlzTLrn_H-2zNdDVqJljL403PxoBJOw/exec';
+const BACKUP_GAS_URL =
+  'https://script.google.com/macros/s/AKfycbzAv_xYB_2g1QTx7gPnQXwcd7QB1VclpWSIjtcXk9QTX_M65mnoxWZ2H_6AeGUBzN7l/exec';
 const GAS_URL = process.env.GAS_URL || DEFAULT_GAS_URL;
 
 const DIST_DIR = path.join(__dirname, 'dist');
@@ -300,6 +302,16 @@ const server = http.createServer(async (req, res) => {
   // 2. Endpoint khusus Robot POS Kluto (/api/kluto-sync)
   if (pathname === '/api/kluto-sync') {
     if (req.method === 'GET') {
+      const shouldRun = parsedUrl.searchParams.get('run') === '1' || parsedUrl.searchParams.get('run') === 'true';
+      const targetTgl = parsedUrl.searchParams.get('tanggal') || undefined;
+      if (shouldRun && !klutoSyncStatus.isRunning) {
+        executeKlutoSyncJob(targetTgl).catch((e) => console.error('Manual Kluto trigger error:', e));
+        return sendJson(res, 200, {
+          status: 'sukses',
+          message: `Robot POS Kluto sedang berjalan menarik data tanggal ${targetTgl || 'hari ini/kemarin'}. Refresh halaman ini beberapa detik lagi untuk melihat log progresnya.`,
+          ...klutoSyncStatus
+        });
+      }
       return sendJson(res, 200, { status: 'sukses', ...klutoSyncStatus });
     }
     if (req.method === 'POST') {
@@ -314,9 +326,9 @@ const server = http.createServer(async (req, res) => {
   }
 
   // 2b. Endpoint Auto-Update 1-Klik / GitHub Webhook (/api/auto-update)
-  // Saat Anda klik "Save to GitHub" di AI Studio, VPS otomatis menarik perubahan & build sendiri tanpa perlu download/terminal!
+  // Saat Anda klik "Save to GitHub" di AI Studio, VPS otomatis menarik perubahan, build, & restart PM2 tanpa perlu terminal!
   if (pathname === '/api/auto-update') {
-    exec('git pull && npm install && npm run build', { cwd: __dirname }, (err, stdout, stderr) => {
+    exec('git pull && npm install && npm run build && (pm2 restart flow-portal || true)', { cwd: __dirname }, (err, stdout, stderr) => {
       if (err) {
         console.error('Auto-update error:', err.message, stderr);
       } else {
@@ -325,7 +337,7 @@ const server = http.createServer(async (req, res) => {
     });
     return sendJson(res, 200, {
       status: 'sukses',
-      message: 'VPS sedang menarik update terbaru dari GitHub & melakukan build otomatis di latar belakang.'
+      message: 'VPS sedang menarik update terbaru dari GitHub, melakukan build otomatis, dan merestart server di latar belakang.'
     });
   }
 
@@ -335,16 +347,28 @@ const server = http.createServer(async (req, res) => {
       if (req.method === 'GET') {
         const action = parsedUrl.searchParams.get('api') || parsedUrl.searchParams.get('action') || '';
         const email = (parsedUrl.searchParams.get('email') || '').toLowerCase().trim();
+        const periode = (parsedUrl.searchParams.get('periode') || '').trim();
+        const idPegawai = (parsedUrl.searchParams.get('id_pegawai') || '').trim();
+        const forceRefresh = parsedUrl.searchParams.get('force') === '1';
         const qs = parsedUrl.searchParams.toString();
 
+        const fetchInitialFromGas = async () => {
+          const upstream = await fetch(`${GAS_URL}?${qs}`);
+          const data = await upstream.json();
+          if (data && data.status !== 'error') {
+            dbCache.initialDataByEmail[email] = data;
+            saveDb();
+          }
+          return data;
+        };
+
         if (action === 'get_initial_data' && email) {
+          if (!forceRefresh && dbCache.initialDataByEmail[email]) {
+            fetchInitialFromGas().catch(() => {});
+            return sendJson(res, 200, dbCache.initialDataByEmail[email]);
+          }
           try {
-            const upstream = await fetch(`${GAS_URL}?${qs}`);
-            const data = await upstream.json();
-            if (data && !data.status) {
-              dbCache.initialDataByEmail[email] = data;
-              saveDb();
-            }
+            const data = await fetchInitialFromGas();
             return sendJson(res, 200, data);
           } catch (e) {
             if (dbCache.initialDataByEmail[email]) {
@@ -354,14 +378,23 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
+        const fetchHistoryFromGas = async () => {
+          const upstream = await fetch(`${GAS_URL}?${qs}`);
+          const data = await upstream.json();
+          if (Array.isArray(data)) {
+            dbCache.historyByEmail[email] = data;
+            saveDb();
+          }
+          return data;
+        };
+
         if (action === 'get_history' && email) {
+          if (!forceRefresh && Array.isArray(dbCache.historyByEmail[email]) && dbCache.historyByEmail[email].length > 0) {
+            fetchHistoryFromGas().catch(() => {});
+            return sendJson(res, 200, dbCache.historyByEmail[email]);
+          }
           try {
-            const upstream = await fetch(`${GAS_URL}?${qs}`);
-            const data = await upstream.json();
-            if (Array.isArray(data)) {
-              dbCache.historyByEmail[email] = data;
-              saveDb();
-            }
+            const data = await fetchHistoryFromGas();
             return sendJson(res, 200, data);
           } catch (e) {
             if (dbCache.historyByEmail[email]) {
@@ -371,12 +404,72 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
-        // Teruskan GET lainnya ke GAS dengan fallback cache
-        const cacheKey = `${action}__${qs}`;
+        const fetchSalaryFromGas = async (cacheKey) => {
+          const upstream = await fetch(`${GAS_URL}?${qs}`);
+          const data = await upstream.json();
+          if (data && data.status !== 'error') {
+            // Jika sheet uji coba (TES VPS) tab Import Komisi-nya masih 0 baris karena #REF! IMPORTRANGE,
+            // otomatis ambil import_komisi & total_point dari sheet produksi utama (BACKUP_GAS_URL)
+            if (
+              (!data.import_komisi || data.import_komisi.length === 0) &&
+              (!data.debug_import_komisi || data.debug_import_komisi.length === 0) &&
+              BACKUP_GAS_URL &&
+              GAS_URL !== BACKUP_GAS_URL
+            ) {
+              try {
+                const bRes = await fetch(`${BACKUP_GAS_URL}?${qs}`);
+                const bData = await bRes.json();
+                if (bData && bData.status !== 'error') {
+                  if (Array.isArray(bData.import_komisi) && bData.import_komisi.length > 0) {
+                    data.import_komisi = bData.import_komisi;
+                  }
+                  if (!data.total_point && bData.total_point) {
+                    data.total_point = bData.total_point;
+                  }
+                  if ((!data.transaksi_prod || data.transaksi_prod.length === 0) && Array.isArray(bData.transaksi_prod)) {
+                    data.transaksi_prod = bData.transaksi_prod;
+                  }
+                }
+              } catch (_) {}
+            }
+            dbCache.salaryCache[cacheKey] = data;
+            saveDb();
+          }
+          return data;
+        };
+
+        if (action === 'get_salary_data' && email) {
+          const salaryKey = `salary__${email}__${periode}__${idPegawai}`;
+          const cachedSalary = dbCache.salaryCache[salaryKey];
+          if (
+            !forceRefresh &&
+            cachedSalary &&
+            Array.isArray(cachedSalary.import_komisi) &&
+            cachedSalary.import_komisi.length > 0
+          ) {
+            fetchSalaryFromGas(salaryKey).catch(() => {});
+            return sendJson(res, 200, cachedSalary);
+          }
+          try {
+            const data = await fetchSalaryFromGas(salaryKey);
+            return sendJson(res, 200, data);
+          } catch (e) {
+            if (cachedSalary) {
+              return sendJson(res, 200, cachedSalary);
+            }
+            throw e;
+          }
+        }
+
+        // Teruskan GET lainnya ke GAS dengan fallback cache (abaikan parameter cb agar cache efektif)
+        const cleanParams = new URLSearchParams(parsedUrl.searchParams);
+        cleanParams.delete('cb');
+        const cacheKey = `${action}__${cleanParams.toString()}`;
         try {
           const upstream = await fetch(`${GAS_URL}?${qs}`);
           const data = await upstream.json();
           dbCache.salaryCache[cacheKey] = data;
+          saveDb();
           return sendJson(res, 200, data);
         } catch (e) {
           if (dbCache.salaryCache[cacheKey]) {

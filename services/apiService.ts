@@ -4,14 +4,25 @@ import { SOP_DATA, MOCK_MATERI, MOCK_PESAN_MANAGER, MOCK_LOKASI, MOCK_TASKS } fr
 import { safeSetItem, safeGetItem } from './storageHelper';
 
 const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycby7_TYAxQcEhY9qDb2MhtIWaigpzyG08FnYTuRvlzTLrn_H-2zNdDVqJljL403PxoBJOw/exec";
-const GAS_URL: string = (import.meta as any).env?.VITE_BACKEND_URL || DEFAULT_GAS_URL;
+const BACKUP_GAS_URL = "https://script.google.com/macros/s/AKfycbzAv_xYB_2g1QTx7gPnQXwcd7QB1VclpWSIjtcXk9QTX_M65mnoxWZ2H_6AeGUBzN7l/exec";
 
-const isConfigured = () => {
-  return Boolean(GAS_URL && GAS_URL !== "" && (GAS_URL.startsWith("https://script.google.com") || GAS_URL.startsWith("/api/") || GAS_URL.startsWith("http")));
+const resolveBackendUrl = (): string => {
+  const envUrl = (import.meta as any).env?.VITE_BACKEND_URL;
+  if (envUrl && String(envUrl).trim() !== "") return String(envUrl).trim();
+  if (typeof window !== "undefined" && window.location && window.location.hostname === "app.flowsalon.id") {
+    return "/absen/api/backend";
+  }
+  return DEFAULT_GAS_URL;
 };
 
-// Helper untuk fetch dengan timeout dan error handling JSON
-const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 35000, retries = 2): Promise<any> => {
+const GAS_URL: string = resolveBackendUrl();
+
+const isConfigured = () => {
+  return Boolean(GAS_URL && GAS_URL !== "" && (GAS_URL.startsWith("https://script.google.com") || GAS_URL.startsWith("/api/") || GAS_URL.startsWith("/absen/") || GAS_URL.startsWith("http")));
+};
+
+// Helper untuk fetch dengan timeout, error handling JSON, dan auto-fallback jika URL script uji coba belum di-set "Anyone"
+const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 35000, retries = 1, triedBackup = false): Promise<any> => {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
   try {
@@ -22,6 +33,10 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout 
     try {
       return JSON.parse(text);
     } catch (e) {
+      if (!triedBackup && url.includes(DEFAULT_GAS_URL)) {
+        const fallbackUrl = url.replace(DEFAULT_GAS_URL, BACKUP_GAS_URL);
+        return fetchWithTimeout(fallbackUrl, options, timeout, 1, true);
+      }
       console.warn("Non-JSON response:", text);
       return { status: "error", message: "Server merespon dengan format yang salah (Mungkin error permission)." };
     }
@@ -29,10 +44,13 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout 
     clearTimeout(id);
     
     if (retries > 0) {
-      console.warn(`Fetch failed, retrying... (${retries} retries left)`, error);
-      // Wait a bit before retrying
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      return fetchWithTimeout(url, options, timeout, retries - 1);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return fetchWithTimeout(url, options, timeout, retries - 1, triedBackup);
+    }
+
+    if (!triedBackup && url.includes(DEFAULT_GAS_URL)) {
+      const fallbackUrl = url.replace(DEFAULT_GAS_URL, BACKUP_GAS_URL);
+      return fetchWithTimeout(fallbackUrl, options, timeout, 1, true);
     }
 
     if (error.name === 'AbortError') {
@@ -470,6 +488,32 @@ export const api = {
       }
       const res = await fetchWithTimeout(url);
       if (res && res.status !== "error") {
+        // Jika database uji coba (FLOW DATABASE - TES VPS) tab Import Komisi-nya masih kosong / #REF! IMPORTRANGE,
+        // ambil data import_komisi & point dari database utama agar Rincian Komisi & Point tetap tampil lengkap
+        if (
+          (!res.import_komisi || res.import_komisi.length === 0) &&
+          (!res.debug_import_komisi || res.debug_import_komisi.length === 0) &&
+          BACKUP_GAS_URL &&
+          !url.includes(BACKUP_GAS_URL)
+        ) {
+          try {
+            let backupUrl = `${BACKUP_GAS_URL}?action=get_salary_data&email=${encodeURIComponent(email)}&periode=${encodeURIComponent(periode)}&cb=${Date.now()}`;
+            if (id_pegawai) backupUrl += `&id_pegawai=${encodeURIComponent(id_pegawai)}`;
+            const backupRes = await fetchWithTimeout(backupUrl, {}, 25000, 0, true);
+            if (backupRes && backupRes.status !== "error") {
+              if (Array.isArray(backupRes.import_komisi) && backupRes.import_komisi.length > 0) {
+                res.import_komisi = backupRes.import_komisi;
+              }
+              if (!res.total_point && backupRes.total_point) {
+                res.total_point = backupRes.total_point;
+              }
+              if ((!res.transaksi_prod || res.transaksi_prod.length === 0) && Array.isArray(backupRes.transaksi_prod)) {
+                res.transaksi_prod = backupRes.transaksi_prod;
+              }
+            }
+          } catch (_) {}
+        }
+
         try {
           safeSetItem(cacheKey, JSON.stringify(res));
         } catch (e) {

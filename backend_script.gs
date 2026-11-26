@@ -370,9 +370,19 @@ function getSalaryData(e){
         const rPeriodeVal = r.tanggal || r.Tanggal || r.waktu || r.Waktu || r.tgl || r.date || r.Date || "";
         return parseToYYYYMM(rPeriodeVal) === targetP;
       }).map(r => {
+        const omzetNetto = cleanNumBackend(r.omzet_netto || r.omset_netto || r.Omzet_Netto || r.Omset_Netto || r["Omzet Netto"] || 0);
+        const omzetBruto = cleanNumBackend(r.omzet_bruto || r.omset_bruto || r.Omzet_Bruto || r.Omset_Bruto || r["Omzet Bruto"] || 0);
+        const omsetFallback = cleanNumBackend(r.omset || r.Omset || r.Omzet || 0);
         return {
           tanggal: r.tanggal || r.Tanggal || r.waktu || r.Waktu || r.tgl || r.date || r.Date || "",
-          omset: cleanNumBackend(r.omzet_netto || r.omset_netto || r.omzet_bruto || r.omset_bruto || r.omset || r.Omset_Netto || r.Omzet_Netto || r.Omzet_Bruto || r.Omset_Bruto || r.Omset || r.Omzet || 0),
+          cabang: r.cabang || r.Cabang || "",
+          id_pegawai: r.id_pegawai || r["ID Pegawai"] || r.idpegawai || "",
+          pegawai: r.pegawai || r.Pegawai || r.nama || r.Nama || "",
+          jml_transaksi: cleanNumBackend(r.jml_transaksi || r["Jml Transaksi"] || r.jmltransaksi || 0),
+          jml_layanan: cleanNumBackend(r.jml_layanan || r["Jml Layanan"] || r.jmllayanan || 0),
+          omzet_bruto: omzetBruto || omsetFallback,
+          omzet_netto: omzetNetto || omzetBruto || omsetFallback,
+          omset: omzetNetto || omzetBruto || omsetFallback,
           komisi: cleanNumBackend(r.komisi || r.Komisi || 0)
         };
       });
@@ -2424,32 +2434,54 @@ function syncPosKluto(p) {
   let addedKomisi = 0;
   let addedProduk = 0;
 
-  // 1. Simpan ke tab "Import Komisi" (ditotal per tanggal per karyawan)
+  // 1. Simpan ke tab "Import Komisi" Lengkap 9 Kolom:
+  // Tanggal | Cabang | ID Pegawai | Pegawai | Jml Transaksi | Jml Layanan | Omzet Bruto | Omzet Netto | Komisi
   if (Array.isArray(p.importKomisi) && p.importKomisi.length > 0) {
     let shKom = ss.getSheetByName("Import Komisi");
     if (!shKom) {
       shKom = ss.insertSheet("Import Komisi");
-      shKom.appendRow(["Tanggal", "Pegawai", "Cabang", "Omset", "Komisi"]);
-      shKom.getRange(1, 1, 1, 5).setFontWeight("bold");
+      shKom.appendRow([
+        "Tanggal",
+        "Cabang",
+        "ID Pegawai",
+        "Pegawai",
+        "Jml Transaksi",
+        "Jml Layanan",
+        "Omzet Bruto",
+        "Omzet Netto",
+        "Komisi"
+      ]);
+      shKom.getRange(1, 1, 1, 9).setFontWeight("bold");
     }
 
     const rows = shKom.getDataRange().getValues();
     const headers = rows[0].map(function(h) { return String(h).toLowerCase().trim(); });
     const idxTgl = headers.findIndex(function(h) { return h.indexOf("tanggal") !== -1 || h.indexOf("waktu") !== -1 || h.indexOf("date") !== -1; });
-    const idxNama = headers.findIndex(function(h) { return h.indexOf("pegawai") !== -1 || h.indexOf("nama") !== -1 || h.indexOf("karyawan") !== -1; });
     const idxCabang = headers.findIndex(function(h) { return h.indexOf("cabang") !== -1 || h.indexOf("outlet") !== -1; });
-    const idxOmset = headers.findIndex(function(h) { return h.indexOf("omset") !== -1 || h.indexOf("omzet") !== -1; });
+    const idxIdPeg = headers.findIndex(function(h) { return h.indexOf("id") !== -1 && (h.indexOf("pegawai") !== -1 || h.indexOf("staff") !== -1 || h.indexOf("pos") !== -1); });
+    const idxNama = headers.findIndex(function(h) { return h.indexOf("id") === -1 && (h.indexOf("pegawai") !== -1 || h.indexOf("nama") !== -1 || h.indexOf("karyawan") !== -1); });
+    const idxJmlTrx = headers.findIndex(function(h) { return h.indexOf("transaksi") !== -1; });
+    const idxJmlLay = headers.findIndex(function(h) { return h.indexOf("layanan") !== -1; });
+    const idxBruto = headers.findIndex(function(h) { return h.indexOf("bruto") !== -1; });
+    const idxNetto = headers.findIndex(function(h) { return h.indexOf("netto") !== -1 || (h.indexOf("omset") !== -1 && h.indexOf("bruto") === -1) || (h.indexOf("omzet") !== -1 && h.indexOf("bruto") === -1); });
     const idxKomisi = headers.findIndex(function(h) { return h.indexOf("komisi") !== -1; });
 
-    // Hapus baris lama di tanggal & karyawan yang sama agar tidak dobel jika robot dijalankan ulang
+    // Hapus baris lama di tanggal, cabang & karyawan yang sama agar tidak dobel jika robot dijalankan ulang
     for (let r = rows.length - 1; r >= 1; r--) {
       const rDate = parseDateBackend(rows[r][idxTgl !== -1 ? idxTgl : 0]);
       if (!rDate) continue;
       const rDateKey = rDate.getFullYear() + "-" + String(rDate.getMonth() + 1).padStart(2, '0') + "-" + String(rDate.getDate()).padStart(2, '0');
       if (rDateKey === targetDateKey) {
-        const rNama = String(rows[r][idxNama !== -1 ? idxNama : 1] || "").toLowerCase().trim();
+        const rNama = String(rows[r][idxNama !== -1 ? idxNama : 3] || "").toLowerCase().trim();
+        const rId = idxIdPeg !== -1 ? String(rows[r][idxIdPeg] || "").trim() : "";
+        const rCabang = idxCabang !== -1 ? String(rows[r][idxCabang] || "").toLowerCase().trim() : "";
         const matchIncoming = p.importKomisi.some(function(item) {
-          return String(item.nama || item.pegawai || "").toLowerCase().trim() === rNama;
+          const inNama = String(item.pegawai || item.nama || "").toLowerCase().trim();
+          const inId = String(item.id_pegawai || "").trim();
+          const inCab = String(item.cabang || "").toLowerCase().trim();
+          const samePerson = (rId && inId && rId === inId) || (rNama && inNama && rNama === inNama);
+          const sameBranch = !rCabang || !inCab || rCabang === inCab;
+          return samePerson && sameBranch;
         });
         if (matchIncoming) {
           shKom.deleteRow(r + 1);
@@ -2458,13 +2490,21 @@ function syncPosKluto(p) {
     }
 
     p.importKomisi.forEach(function(item) {
-      const newRow = new Array(Math.max(headers.length, 5)).fill("");
+      const newRow = new Array(Math.max(headers.length, 9)).fill("");
       const dVal = item.tanggal || p.tanggal || new Date();
+      const brutoVal = cleanNumBackend(item.omzet_bruto !== undefined ? item.omzet_bruto : (item.omset || 0));
+      const nettoVal = cleanNumBackend(item.omzet_netto !== undefined ? item.omzet_netto : (item.omset || brutoVal));
+
       newRow[idxTgl !== -1 ? idxTgl : 0] = dVal;
-      newRow[idxNama !== -1 ? idxNama : 1] = item.nama || item.pegawai || "";
-      if (idxCabang !== -1) newRow[idxCabang] = item.cabang || "";
-      newRow[idxOmset !== -1 ? idxOmset : 3] = cleanNumBackend(item.omset || 0);
-      newRow[idxKomisi !== -1 ? idxKomisi : 4] = cleanNumBackend(item.komisi || 0);
+      newRow[idxCabang !== -1 ? idxCabang : 1] = item.cabang || "";
+      newRow[idxIdPeg !== -1 ? idxIdPeg : 2] = item.id_pegawai || "";
+      newRow[idxNama !== -1 ? idxNama : 3] = item.pegawai || item.nama || "";
+      newRow[idxJmlTrx !== -1 ? idxJmlTrx : 4] = cleanNumBackend(item.jml_transaksi || 0);
+      newRow[idxJmlLay !== -1 ? idxJmlLay : 5] = cleanNumBackend(item.jml_layanan || 0);
+      newRow[idxBruto !== -1 ? idxBruto : 6] = brutoVal;
+      newRow[idxNetto !== -1 ? idxNetto : 7] = nettoVal;
+      newRow[idxKomisi !== -1 ? idxKomisi : 8] = cleanNumBackend(item.komisi || 0);
+
       shKom.appendRow(newRow);
       addedKomisi++;
     });

@@ -364,38 +364,117 @@ export async function runKlutoSync(options = {}) {
 
         for (const r of rowsOnPage) {
           const { headers, cells } = r;
-          if (!cells || cells.length < 2) continue;
+          if (!cells || cells.length < 3) continue;
           if (cells.length === 1 || /no data|tidak ada data|kosong/i.test(cells[0])) continue;
 
-          // Cari kolom Nama/Karyawan/Staff, Omset/Harga/Total, dan Komisi
-          const idxNama = headers.findIndex((h) =>
-            /nama|staff|karyawan|pegawai|terapis|stylist/i.test(h)
+          // Deteksi seluruh kolom Report Komisi Kluto:
+          // ID Pegawai | Pegawai | Jml Transaksi | Jml Layanan | Omzet Bruto | Omzet Netto | Komisi
+          const idxIdPegawai = headers.findIndex((h) =>
+            /id\s*pegawai|id\s*staff|id\s*karyawan|^id$|nik/i.test(h)
           );
-          const idxOmset = headers.findIndex((h) =>
-            /omset|omzet|total harga|harga item|harga|penjualan|bruto|netto/i.test(h)
+          const idxNama = headers.findIndex((h) =>
+            /^(pegawai|nama|staff|karyawan|terapis|stylist)/i.test(h) ||
+            (!/id/i.test(h) && /pegawai|nama|staff|karyawan/i.test(h))
+          );
+          const idxJmlTransaksi = headers.findIndex((h) =>
+            /jml\s*transaksi|jumlah\s*transaksi|transaksi/i.test(h)
+          );
+          const idxJmlLayanan = headers.findIndex((h) =>
+            /jml\s*layanan|jumlah\s*layanan|layanan|item/i.test(h)
+          );
+          const idxOmzetBruto = headers.findIndex((h) =>
+            /bruto|omzet\s*bruto|omset\s*bruto/i.test(h)
+          );
+          const idxOmzetNetto = headers.findIndex((h) =>
+            /netto|omzet\s*netto|omset\s*netto/i.test(h)
+          );
+          const idxOmsetGeneric = headers.findIndex((h) =>
+            /omset|omzet|total harga|penjualan/i.test(h)
           );
           const idxKomisi = headers.findIndex((h) => /komisi|nominal komisi/i.test(h));
 
-          const rawNama = cells[idxNama !== -1 ? idxNama : 1] || '';
-          const rawOmset = idxOmset !== -1 ? cells[idxOmset] : cells[cells.length - 2] || '0';
-          const rawKomisi = idxKomisi !== -1 ? cells[idxKomisi] : cells[cells.length - 1] || '0';
+          // Fallback posisi kolom standar Kluto Report Komisi jika header tidak terbaca spesifik
+          const rawIdPegawai =
+            idxIdPegawai !== -1
+              ? cells[idxIdPegawai]
+              : cells.length >= 7 && /^\d+$/.test(cells[0])
+              ? cells[0]
+              : cells.length >= 8 && /^\d+$/.test(cells[1])
+              ? cells[1]
+              : '';
+
+          const rawNama =
+            idxNama !== -1
+              ? cells[idxNama]
+              : cells.length >= 7 && /^\d+$/.test(cells[0])
+              ? cells[1]
+              : cells[1] || '';
+
+          const rawJmlTrx =
+            idxJmlTransaksi !== -1
+              ? cells[idxJmlTransaksi]
+              : cells.length >= 7
+              ? cells[cells.length - 5]
+              : '0';
+
+          const rawJmlLay =
+            idxJmlLayanan !== -1
+              ? cells[idxJmlLayanan]
+              : cells.length >= 7
+              ? cells[cells.length - 4]
+              : '0';
+
+          const rawBruto =
+            idxOmzetBruto !== -1
+              ? cells[idxOmzetBruto]
+              : cells.length >= 7
+              ? cells[cells.length - 3]
+              : idxOmsetGeneric !== -1
+              ? cells[idxOmsetGeneric]
+              : '0';
+
+          const rawNetto =
+            idxOmzetNetto !== -1
+              ? cells[idxOmzetNetto]
+              : cells.length >= 7
+              ? cells[cells.length - 2]
+              : rawBruto;
+
+          const rawKomisi =
+            idxKomisi !== -1 ? cells[idxKomisi] : cells[cells.length - 1] || '0';
 
           const nama = cleanStaffName(rawNama);
           if (!nama || /^total|grand total$/i.test(nama)) continue;
 
-          const omsetVal = cleanRupiah(rawOmset);
+          const idPegawai = String(rawIdPegawai || '').trim();
+          const jmlTransaksi = cleanRupiah(rawJmlTrx);
+          const jmlLayanan = cleanRupiah(rawJmlLay);
+          const omzetBruto = cleanRupiah(rawBruto);
+          const omzetNetto = cleanRupiah(rawNetto);
           const komisiVal = cleanRupiah(rawKomisi);
-          if (omsetVal === 0 && komisiVal === 0) continue;
 
-          const mapKey = `${nama.toLowerCase()}__${cleanBranchName.toLowerCase()}`;
+          if (omzetBruto === 0 && omzetNetto === 0 && komisiVal === 0 && jmlTransaksi === 0) continue;
+
+          const mapKey = `${idPegawai || nama.toLowerCase()}__${cleanBranchName.toLowerCase()}`;
           const existing = aggregatedKomisiMap.get(mapKey) || {
             tanggal: mmddyyyy,
-            nama,
             cabang: cleanBranchName,
+            id_pegawai: idPegawai,
+            pegawai: nama,
+            nama,
+            jml_transaksi: 0,
+            jml_layanan: 0,
+            omzet_bruto: 0,
+            omzet_netto: 0,
             omset: 0,
             komisi: 0
           };
-          existing.omset += omsetVal;
+          if (!existing.id_pegawai && idPegawai) existing.id_pegawai = idPegawai;
+          existing.jml_transaksi += jmlTransaksi;
+          existing.jml_layanan += jmlLayanan;
+          existing.omzet_bruto += omzetBruto;
+          existing.omzet_netto += omzetNetto;
+          existing.omset += omzetNetto || omzetBruto;
           existing.komisi += komisiVal;
           aggregatedKomisiMap.set(mapKey, existing);
         }

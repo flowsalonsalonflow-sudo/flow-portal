@@ -2565,8 +2565,15 @@ function syncPosKluto(p) {
         const rCabang = idxCabang !== -1 ? String(row[idxCabang] || "").toLowerCase().trim() : "";
         const rId = idxIdPeg !== -1 ? String(row[idxIdPeg] || "").trim() : "";
         const rNama = String(row[idxNama !== -1 ? idxNama : 3] || "").toLowerCase().trim();
+        const rBruto = cleanNumBackend(row[idxBruto !== -1 ? idxBruto : 6] || 0);
+        const rNetto = cleanNumBackend(row[idxNetto !== -1 ? idxNetto : 7] || 0);
+        const rKom = cleanNumBackend(row[idxKomisi !== -1 ? idxKomisi : 8] || 0);
 
-        if (!rDateKey && !rNama && !rId) continue;
+        // Abaikan baris kosong / baris sisa gagal validasi yang tidak punya Nama dan tidak punya nominal Omzet/Komisi
+        if ((!rDateKey && !rNama && !rId) || (!rNama && rBruto === 0 && rNetto === 0 && rKom === 0)) {
+          removedDuplicateKomisi++;
+          continue;
+        }
 
         const keyById = rDateKey && rId ? (rDateKey + "__" + rCabang + "__id:" + rId) : "";
         const keyByName = rDateKey && rNama ? (rDateKey + "__" + rCabang + "__nm:" + rNama) : "";
@@ -2596,6 +2603,8 @@ function syncPosKluto(p) {
         const cabKey = String(item.cabang || "").toLowerCase().trim();
         const idKey = String(item.id_pegawai || "").trim();
         const namaKey = String(item.pegawai || item.nama || "").toLowerCase().trim();
+        if (!namaKey && !idKey) return;
+
         const dedupKey = dKey ? (dKey + "__" + cabKey + "__" + (idKey ? "id:" + idKey : "nm:" + namaKey)) : "";
         if (dedupKey && seenExistingKeys[dedupKey]) return;
         if (dedupKey) seenExistingKeys[dedupKey] = true;
@@ -2619,6 +2628,9 @@ function syncPosKluto(p) {
         addedKomisi++;
       });
 
+      try {
+        shKom.getRange(1, 1, Math.max(shKom.getMaxRows(), keptRows.length), numCols).clearDataValidations();
+      } catch (dvErr) {}
       shKom.clearContents();
       shKom.getRange(1, 1, keptRows.length, numCols).setValues(keptRows);
     }
@@ -2706,6 +2718,9 @@ function syncPosKluto(p) {
         addedProduk++;
       });
 
+      try {
+        shProd.getRange(1, 1, Math.max(shProd.getMaxRows(), keptProdRows.length), numCols).clearDataValidations();
+      } catch (dvErr) {}
       shProd.clearContents();
       shProd.getRange(1, 1, keptProdRows.length, numCols).setValues(keptProdRows);
     }
@@ -2752,6 +2767,9 @@ function deduplicatePosKluto(p) {
         const idxCabang = headers.findIndex(function(h) { return h.indexOf("cabang") !== -1 || h.indexOf("outlet") !== -1; });
         const idxIdPeg = headers.findIndex(function(h) { return h.indexOf("id") !== -1 && (h.indexOf("pegawai") !== -1 || h.indexOf("staff") !== -1 || h.indexOf("pos") !== -1); });
         const idxNama = headers.findIndex(function(h) { return h.indexOf("id") === -1 && (h.indexOf("pegawai") !== -1 || h.indexOf("nama") !== -1 || h.indexOf("karyawan") !== -1); });
+        const idxBruto = headers.findIndex(function(h) { return h.indexOf("bruto") !== -1; });
+        const idxNetto = headers.findIndex(function(h) { return h.indexOf("netto") !== -1 || (h.indexOf("omset") !== -1 && h.indexOf("bruto") === -1) || (h.indexOf("omzet") !== -1 && h.indexOf("bruto") === -1); });
+        const idxKomisi = headers.findIndex(function(h) { return h.indexOf("komisi") !== -1; });
 
         // Simpan baris terbaru (dari bawah ke atas) jika ada tanggal + cabang + pegawai yang kembar
         const seenKeys = {};
@@ -2762,7 +2780,14 @@ function deduplicatePosKluto(p) {
           const rCabang = idxCabang !== -1 ? String(row[idxCabang] || "").toLowerCase().trim() : "";
           const rId = idxIdPeg !== -1 ? String(row[idxIdPeg] || "").trim() : "";
           const rNama = String(row[idxNama !== -1 ? idxNama : 3] || "").toLowerCase().trim();
-          if (!rDateKey && !rNama && !rId) continue;
+          const rBruto = cleanNumBackend(row[idxBruto !== -1 ? idxBruto : 6] || 0);
+          const rNetto = cleanNumBackend(row[idxNetto !== -1 ? idxNetto : 7] || 0);
+          const rKom = cleanNumBackend(row[idxKomisi !== -1 ? idxKomisi : 8] || 0);
+
+          if ((!rDateKey && !rNama && !rId) || (!rNama && rBruto === 0 && rNetto === 0 && rKom === 0)) {
+            removedKomisi++;
+            continue;
+          }
 
           const key = rDateKey + "__" + rCabang + "__" + (rId ? "id:" + rId : "nm:" + rNama);
           if (rDateKey && (rId || rNama) && seenKeys[key]) {
@@ -2775,6 +2800,9 @@ function deduplicatePosKluto(p) {
         uniqueReversed.reverse();
         const finalRows = [rows[0]].concat(uniqueReversed);
         totalKomisiAfter = uniqueReversed.length;
+        try {
+          shKom.getRange(1, 1, shKom.getMaxRows(), numCols).clearDataValidations();
+        } catch (dvErr) {}
         if (removedKomisi > 0) {
           shKom.clearContents();
           shKom.getRange(1, 1, finalRows.length, numCols).setValues(finalRows);

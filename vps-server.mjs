@@ -119,12 +119,13 @@ function saveBase64PhotoToVps(base64Data, nama, timestampMs, hostHeader) {
     const fileName = `Absen_${safeName}_${timestampMs}.jpg`;
     const filePath = path.join(UPLOADS_DIR, fileName);
     fs.writeFileSync(filePath, Buffer.from(parts[1], 'base64'));
-    const proto = process.env.PUBLIC_BASE_URL
-      ? process.env.PUBLIC_BASE_URL.replace(/\/$/, '')
-      : hostHeader
-      ? `https://${hostHeader}`
-      : '';
-    return `${proto}/uploads/absen/${fileName}`;
+    let rawBase = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+    if (!rawBase || rawBase.includes('portal.flowsalon.id') || rawBase === 'https://app.flowsalon.id') {
+      rawBase = hostHeader
+        ? `https://${hostHeader}/absen`
+        : 'https://app.flowsalon.id/absen';
+    }
+    return `${rawBase}/uploads/absen/${fileName}`;
   } catch (err) {
     console.error('Gagal simpan foto ke VPS:', err.message);
     return '';

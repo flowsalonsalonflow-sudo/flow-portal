@@ -2,16 +2,19 @@
  * ============================================================================
  * FLOW SALON - ROBOT PENARIK OTOMATIS POS KLUTO (https://my.kluto.id)
  * ============================================================================
- * Fitur Robot:
- * 1. Mendukung Tarik 1 Tanggal maupun Tarik Rentang Tanggal (Backfill Periode)
- *    dalam 1x Login (contoh: 2026-04-01 s/d 2026-04-27).
- * 2. Loop seluruh cabang di dropdown pojok kanan bawah (Flow - Cibeber, Serang, Pagebangan, dll)
- * 3. Ambil Report Komisi (Lengkap 9 Kolom untuk Gaji & Penilaian Karyawan):
+ * Mode Direct HTTP API Engine (Tanpa Browser / Bebas Timeout Playwright):
+ * 1. Login langsung via endpoint resmi `ab-action.php?jen=sign-in`
+ * 2. Mendeteksi seluruh cabang di `<select onchange="gantiStore(this.value)">`
+ *    - Flow - Cilegon -> Pagebangan
+ *    - Flow - Cibeber -> Cibeber
+ *    - Flow - Serang  -> Serang
+ * 3. Menarik Report Komisi per tanggal per cabang langsung dari:
+ *    `boss/pages/report/report-komisi/data.php?start=YYYY-MM-DD&end=YYYY-MM-DD`
+ *    Lengkap 9 Kolom:
  *    Tanggal | Cabang | ID Pegawai | Pegawai | Jml Transaksi | Jml Layanan | Omzet Bruto | Omzet Netto | Komisi
- * 4. Ambil Report Transaksi Produk (Filter Kategori: Produk):
- *    Tanggal | No Invoice | Pegawai | Item | Jumlah | Harga Item | Total Harga | Komisi | Cabang
- * 5. Anti-Double (Deduplikasi Otomatis): Menggabungkan baris komisi di hari & cabang yang sama,
- *    mencegah baris produk ganda, dan menimpa data tanggal yang sama di Google Sheets tanpa dobel.
+ * 4. Menarik Report Transaksi Produk per tanggal per cabang langsung dari JSON API:
+ *    `boss/pages/report/report-transaksi/data_table.php?mulai=YYYY-MM-DD&akhir=YYYY-MM-DD&item_type=product&length=2147483647`
+ *    (Otomatis mengabaikan transaksi Void & menyertakan kode SKU produk).
  * ============================================================================
  */
 
@@ -68,13 +71,23 @@ export function cleanRupiah(val) {
 
 export function cleanStaffName(rawName) {
   if (!rawName) return '';
-  return String(rawName)
+  const cleaned = String(rawName)
+    .replace(/<[^>]*>/g, '')
     .replace(/\(sendiri\)/gi, '')
     .replace(/\(bantu\)/gi, '')
     .replace(/\(sharing\)/gi, '')
     .replace(/^\d+\.\s*/, '')
     .replace(/\s+/g, ' ')
     .trim();
+  return cleaned === '-' ? '' : cleaned;
+}
+
+export function normalizeBranchLabel(rawLabel) {
+  const clean = String(rawLabel || '')
+    .replace(/^Flow\s*-\s*/i, '')
+    .trim();
+  if (/^cilegon$/i.test(clean)) return 'Pagebangan';
+  return clean || 'Utama';
 }
 
 export function formatToDDMMYYYY(dateObj) {
@@ -85,10 +98,11 @@ export function formatToDDMMYYYY(dateObj) {
 }
 
 export function formatToMMDDYYYY(dateObj) {
-  const dd = String(dateObj.getDate()).padStart(2, '0');
-  const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
+  // Format sesuai screenshot Google Sheet user: M/D/YYYY (contoh: 4/1/2026)
+  const d = dateObj.getDate();
+  const m = dateObj.getMonth() + 1;
   const yyyy = dateObj.getFullYear();
-  return `${mm}/${dd}/${yyyy}`;
+  return `${m}/${d}/${yyyy}`;
 }
 
 export function formatToYYYYMMDD(dateObj) {
@@ -109,9 +123,6 @@ export function parseISODateString(dateStr) {
   return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-/**
- * Menghasilkan daftar objek Date dari startDateStr s/d endDateStr (inklusif)
- */
 export function expandDateRange(startDateStr, endDateStr) {
   let start = parseISODateString(startDateStr);
   let end = parseISODateString(endDateStr || startDateStr);
@@ -134,7 +145,7 @@ export function expandDateRange(startDateStr, endDateStr) {
 
   const dates = [];
   const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-  const maxDays = 62; // Batas aman maksimal 62 hari sekali jalan
+  const maxDays = 62;
   while (cursor.getTime() <= end.getTime() && dates.length < maxDays) {
     dates.push(new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()));
     cursor.setDate(cursor.getDate() + 1);
@@ -142,17 +153,76 @@ export function expandDateRange(startDateStr, endDateStr) {
   return dates;
 }
 
+function extractSetCookies(headers) {
+  if (typeof headers.getSetCookie === 'function') {
+    return headers.getSetCookie().map((c) => c.split(';')[0]);
+  }
+  const raw = headers.get('set-cookie');
+  if (!raw) return [];
+  return raw.split(/,(?=\s*[A-Za-z0-9_-]+=)/).map((c) => c.split(';')[0].trim());
+}
+
+function mergeCookies(existingCookieStr, newCookieList) {
+  const map = {};
+  const parts = (existingCookieStr || '')
+    .split(';')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  for (const p of [...parts, ...newCookieList]) {
+    const eq = p.indexOf('=');
+    if (eq !== -1) {
+      const k = p.slice(0, eq).trim();
+      const v = p.slice(eq + 1).trim();
+      map[k] = v;
+    }
+  }
+  return Object.entries(map)
+    .map(([k, v]) => `${k}=${v}`)
+    .join('; ');
+}
+
+function decodeHtmlText(str) {
+  return String(str || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
- * Jalankan penarikan otomatis dari https://my.kluto.id untuk 1 tanggal atau rentang tanggal
- * @param {Object} options
- * @param {string} [options.targetDateStr] - Format YYYY-MM-DD (jika hanya 1 tanggal)
- * @param {string} [options.startDateStr] - Format YYYY-MM-DD (tanggal awal rentang)
- * @param {string} [options.endDateStr] - Format YYYY-MM-DD (tanggal akhir rentang)
- * @param {string} [options.username] - Username/Email login my.kluto.id
- * @param {string} [options.password] - Password login my.kluto.id
- * @param {function} [options.onLog] - Callback log progres
- * @param {function} [options.onProgress] - Callback ({ currentDayIndex, totalDays, currentDateISO })
- * @param {function} [options.onDayResult] - Callback async per hari selesai ({ tanggal, tanggalISO, importKomisi, transaksiProd })
+ * Parse tabel HTML dari `boss/pages/report/report-komisi/data.php`
+ */
+function parseKomisiHtmlTable(html) {
+  const rows = [];
+  if (!html) return rows;
+
+  const theadMatch = html.match(/<thead[\s\S]*?<\/thead>/i);
+  let headers = [];
+  if (theadMatch) {
+    const thMatches = theadMatch[0].match(/<th[^>]*>[\s\S]*?<\/th>/gi) || [];
+    headers = thMatches.map((th) => decodeHtmlText(th).toLowerCase());
+  }
+
+  const tbodyMatch = html.match(/<tbody[\s\S]*?<\/tbody>/i);
+  const bodyHtml = tbodyMatch ? tbodyMatch[0] : html;
+  const trMatches = bodyHtml.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) || [];
+
+  for (const tr of trMatches) {
+    const tdMatches = tr.match(/<td[^>]*>[\s\S]*?<\/td>/gi) || [];
+    if (tdMatches.length < 5) continue;
+    const cells = tdMatches.map((td) => decodeHtmlText(td));
+    rows.push({ headers, cells });
+  }
+  return rows;
+}
+
+/**
+ * Jalankan penarikan otomatis dari https://my.kluto.id via Direct HTTP API
  */
 export async function runKlutoSync(options = {}) {
   const logs = [];
@@ -165,7 +235,7 @@ export async function runKlutoSync(options = {}) {
 
   const username = options.username || process.env.KLUTO_USERNAME || '';
   const password = options.password || process.env.KLUTO_PASSWORD || '';
-  const baseUrl = process.env.KLUTO_BASE_URL || 'https://my.kluto.id';
+  const baseUrl = (process.env.KLUTO_BASE_URL || 'https://my.kluto.id').replace(/\/$/, '');
 
   if (!username || !password) {
     throw new Error('KLUTO_USERNAME dan KLUTO_PASSWORD belum diatur di file .env VPS.');
@@ -179,548 +249,290 @@ export async function runKlutoSync(options = {}) {
   const lastISO = formatToYYYYMMDD(targetDates[targetDates.length - 1]);
 
   if (targetDates.length === 1) {
-    log(`Memulai Robot Kluto POS untuk 1 tanggal: ${formatToDDMMYYYY(targetDates[0])} (${firstISO})...`);
+    log(`Memulai Robot Kluto POS (Direct API) untuk tanggal ${formatToDDMMYYYY(targetDates[0])} (${firstISO})...`);
   } else {
-    log(`Memulai Robot Kluto POS Rentang Tanggal: ${firstISO} s/d ${lastISO} (${targetDates.length} hari)...`);
+    log(`Memulai Robot Kluto POS (Direct API) Rentang Tanggal: ${firstISO} s/d ${lastISO} (${targetDates.length} hari)...`);
   }
 
-  let playwright;
-  try {
-    playwright = await import('playwright');
-  } catch (err) {
-    throw new Error(
-      'Playwright belum terinstall di VPS. Jalankan perintah: npm install playwright && npx playwright install chromium'
+  // 1. Ambil session awal dari /form-login
+  log(`Menghubungi ${baseUrl}/form-login...`);
+  const initResp = await fetch(`${baseUrl}/form-login`, {
+    headers: { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36' }
+  });
+  let cookieHeader = mergeCookies('', extractSetCookies(initResp.headers));
+
+  // 2. Login via ab-action.php?jen=sign-in
+  const loginBody = new URLSearchParams({
+    pegawai_email: username,
+    pegawai_password: password,
+    remember: 'on'
+  });
+
+  const loginResp = await fetch(`${baseUrl}/ab-action.php?jen=sign-in`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Cookie: cookieHeader,
+      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36'
+    },
+    body: loginBody.toString(),
+    redirect: 'manual'
+  });
+
+  cookieHeader = mergeCookies(cookieHeader, extractSetCookies(loginResp.headers));
+  const loginText = await loginResp.text();
+
+  if (!cookieHeader || (/gagal|salah|incorrect|failed/i.test(loginText) && !loginText.includes('boss/index'))) {
+    throw new Error('Login ke my.kluto.id gagal. Periksa KLUTO_USERNAME & KLUTO_PASSWORD di .env.');
+  }
+
+  log('Login ke my.kluto.id berhasil. Membaca daftar cabang...');
+
+  // 3. Buka boss/index untuk mengambil daftar cabang dari <select onchange="gantiStore(this.value);">
+  const dashResp = await fetch(`${baseUrl}/boss/index?page=report-komisi`, {
+    headers: {
+      Cookie: cookieHeader,
+      'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36'
+    }
+  });
+  cookieHeader = mergeCookies(cookieHeader, extractSetCookies(dashResp.headers));
+  const dashHtml = await dashResp.text();
+
+  const branchList = [];
+  const storeSelectMatch = dashHtml.match(/<select[^>]*gantiStore[^>]*>([\s\S]*?)<\/select>/i);
+  if (storeSelectMatch) {
+    const cleanSelectHtml = storeSelectMatch[1].replace(/<!--[\s\S]*?-->/g, '');
+    const optRegex = /<option[^>]*value="([^"]+)"[^>]*>([\s\S]*?)<\/option>/gi;
+    let m;
+    while ((m = optRegex.exec(cleanSelectHtml)) !== null) {
+      const val = m[1].trim();
+      const label = decodeHtmlText(m[2]);
+      if (val && label && !/semua cabang|pilih/i.test(label)) {
+        branchList.push({
+          value: val,
+          rawLabel: label,
+          cleanName: normalizeBranchLabel(label)
+        });
+      }
+    }
+  }
+
+  if (branchList.length === 0) {
+    branchList.push(
+      { value: '21b29648a47a45ad16bb0da0c004dfba', rawLabel: 'Flow - Cibeber', cleanName: 'Cibeber' },
+      { value: 'b27d5296bede63b1493a5d321d4e8092', rawLabel: 'Flow - Cilegon', cleanName: 'Pagebangan' },
+      { value: 'b7046757c3682a28c5bf2024e57678a0', rawLabel: 'Flow - Serang', cleanName: 'Serang' }
     );
   }
 
-  const browser = await playwright.chromium.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
-  });
+  log(
+    `Ditemukan ${branchList.length} cabang: ${branchList
+      .map((b) => `${b.rawLabel} (-> ${b.cleanName})`)
+      .join(', ')}`
+  );
 
-  const context = await browser.newContext({
-    acceptDownloads: true,
-    viewport: { width: 1440, height: 900 }
-  });
-  const page = await context.newPage();
+  const switchBranchSession = async (branch) => {
+    const switchResp = await fetch(`${baseUrl}/boss/ab-action.php?jen=ganti-store`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Cookie: cookieHeader,
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36'
+      },
+      body: `domainstid=${encodeURIComponent(branch.value)}`
+    });
+    cookieHeader = mergeCookies(cookieHeader, extractSetCookies(switchResp.headers));
+    await switchResp.text().catch(() => '');
+  };
 
   const combinedImportKomisi = [];
   const combinedTransaksiProd = [];
   const dayResults = [];
 
-  try {
-    // 1. Buka halaman login Kluto (Hanya 1x untuk seluruh rentang tanggal)
-    log(`Membuka ${baseUrl}...`);
-    await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+  // 4. Loop setiap tanggal dalam rentang periode
+  for (let dayIdx = 0; dayIdx < targetDates.length; dayIdx++) {
+    const targetDate = targetDates[dayIdx];
+    const ddmmyyyy = formatToDDMMYYYY(targetDate);
+    const mmddyyyy = formatToMMDDYYYY(targetDate);
+    const yyyymmdd = formatToYYYYMMDD(targetDate);
 
-    const userSel = 'input[name="username"], input[name="email"], input[type="email"], input[type="text"]';
-    const passSel = 'input[name="password"], input[type="password"]';
-    await page.waitForSelector(passSel, { timeout: 25000 });
-
-    await page.fill(userSel, username);
-    await page.fill(passSel, password);
-
-    const submitBtn = await page.$(
-      'button[type="submit"], input[type="submit"], button:has-text("Login"), button:has-text("Masuk"), button:has-text("Sign In")'
-    );
-    if (submitBtn) {
-      await Promise.all([
-        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {}),
-        submitBtn.click()
-      ]);
-    } else {
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(4000);
+    if (options.onProgress) {
+      options.onProgress({
+        currentDayIndex: dayIdx + 1,
+        totalDays: targetDates.length,
+        currentDateISO: yyyymmdd,
+        currentDateDisplay: ddmmyyyy
+      });
     }
 
-    log('Login berhasil. Membaca daftar cabang Flow di pojok kanan bawah...');
+    log(`--- [Hari ${dayIdx + 1}/${targetDates.length}] Menarik Data Tanggal ${ddmmyyyy} (${yyyymmdd}) ---`);
 
-    await page.goto(`${baseUrl}/boss/index?page=report-transaksi`, {
-      waitUntil: 'domcontentloaded',
-      timeout: 45000
-    });
-    await page.waitForTimeout(2500);
+    const aggregatedKomisiMap = new Map();
+    const dayTransaksiProdMap = new Map();
 
-    const branches = await page.evaluate(() => {
-      const selects = Array.from(document.querySelectorAll('select'));
-      for (const sel of selects) {
-        const opts = Array.from(sel.options).map((o) => ({
-          value: o.value,
-          label: (o.textContent || '').trim()
-        }));
-        if (opts.some((o) => /flow|cibeber|serang|pagebangan/i.test(o.label))) {
-          return opts.filter((o) => o.value && !/pilih|semua cabang/i.test(o.label));
-        }
-      }
-      return [];
-    });
+    for (const branch of branchList) {
+      const cleanBranchName = branch.cleanName;
+      await switchBranchSession(branch);
 
-    const branchList =
-      branches.length > 0 ? branches : [{ value: 'default', label: 'Flow Default' }];
-
-    log(`Ditemukan ${branchList.length} cabang: ${branchList.map((b) => b.label).join(', ')}`);
-
-    const selectBranchOnPage = async (branchValue, branchLabel) => {
-      if (branchValue === 'default') return;
-      const changed = await page.evaluate((val) => {
-        const selects = Array.from(document.querySelectorAll('select'));
-        for (const sel of selects) {
-          const hasOpt = Array.from(sel.options).some((o) => o.value === val);
-          if (hasOpt) {
-            if (sel.value !== val) {
-              sel.value = val;
-              sel.dispatchEvent(new Event('change', { bubbles: true }));
-              return true;
-            }
-            return false;
-          }
-        }
-        return false;
-      }, branchValue);
-
-      if (changed) {
-        log(`Beralih ke cabang: ${branchLabel}...`);
-        await page.waitForTimeout(2500);
-      }
-    };
-
-    const fillDateAndClickGo = async (dateStrDDMMYYYY, filterProdukOnly = false) => {
-      await page.evaluate(
-        ({ dStr, filterProduk }) => {
-          const inputs = Array.from(
-            document.querySelectorAll(
-              'input[type="text"], input[type="date"], input:not([type="search"]):not([type="hidden"])'
-            )
-          ).filter((el) => {
-            const rect = el.getBoundingClientRect();
-            return rect.width > 50 && rect.height > 15;
-          });
-
-          if (inputs.length >= 2) {
-            inputs[0].value = dStr;
-            inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
-            inputs[0].dispatchEvent(new Event('change', { bubbles: true }));
-
-            inputs[1].value = dStr;
-            inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
-            inputs[1].dispatchEvent(new Event('change', { bubbles: true }));
-          }
-
-          if (filterProduk) {
-            const selects = Array.from(document.querySelectorAll('select'));
-            for (const sel of selects) {
-              const prodOpt = Array.from(sel.options).find(
-                (o) => (o.textContent || '').trim().toLowerCase() === 'produk'
-              );
-              const hasSemuaTipe = Array.from(sel.options).some((o) =>
-                /semua tipe/i.test(o.textContent || '')
-              );
-              if (prodOpt && hasSemuaTipe) {
-                sel.value = prodOpt.value;
-                sel.dispatchEvent(new Event('change', { bubbles: true }));
-                break;
-              }
-            }
-          }
-        },
-        { dStr: dateStrDDMMYYYY, filterProduk: filterProdukOnly }
-      );
-
-      await page.waitForTimeout(400);
-
-      const goBtn = await page.$(
-        'button:has-text("GO"), input[value="GO"], a:has-text("GO"), .btn-primary:has-text("GO")'
-      );
-      if (goBtn) {
-        await Promise.all([
-          page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {}),
-          goBtn.click()
-        ]);
-      }
-      await page.waitForTimeout(2200);
-
-      await page.evaluate(() => {
-        const lenSelect = document.querySelector('select[name$="_length"]');
-        if (lenSelect) {
-          const opts = Array.from(lenSelect.options);
-          const maxOpt = opts[opts.length - 1];
-          if (maxOpt) {
-            lenSelect.value = maxOpt.value;
-            lenSelect.dispatchEvent(new Event('change', { bubbles: true }));
-          }
+      // A. Tarik Report Komisi langsung dari data.php?start=YYYY-MM-DD&end=YYYY-MM-DD
+      const komisiUrl = `${baseUrl}/boss/pages/report/report-komisi/data.php?start=${yyyymmdd}&end=${yyyymmdd}`;
+      const komResp = await fetch(komisiUrl, {
+        headers: {
+          Cookie: cookieHeader,
+          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36'
         }
       });
-      await page.waitForTimeout(900);
-    };
+      const komHtml = await komResp.text();
+      const parsedRows = parseKomisiHtmlTable(komHtml);
 
-    // =========================================================================
-    // LOOP SETIAP TANGGAL DALAM RENTANG PERIODE
-    // =========================================================================
-    for (let dayIdx = 0; dayIdx < targetDates.length; dayIdx++) {
-      const targetDate = targetDates[dayIdx];
-      const ddmmyyyy = formatToDDMMYYYY(targetDate);
-      const mmddyyyy = formatToMMDDYYYY(targetDate);
-      const yyyymmdd = formatToYYYYMMDD(targetDate);
+      let branchKomisiCount = 0;
+      for (const r of parsedRows) {
+        const { headers, cells } = r;
+        if (!cells || cells.length < 6) continue;
+        if (/no data|tidak ada data|kosong|^total$/i.test(cells[0])) continue;
 
-      if (options.onProgress) {
-        options.onProgress({
-          currentDayIndex: dayIdx + 1,
-          totalDays: targetDates.length,
-          currentDateISO: yyyymmdd,
-          currentDateDisplay: ddmmyyyy
-        });
+        // Struktur standar Report Komisi Kluto:
+        // [0] No | [1] ID Pegawai | [2] Pegawai | [3] Jml Transaksi | [4] Jml Layanan | [5] Jam Kerja | [6] Omzet Bruto | [7] Omzet Netto | [8] Komisi
+        const idxIdPegawai = headers.findIndex((h) => /id\s*pegawai|id\s*staff/i.test(h));
+        const idxNama = headers.findIndex(
+          (h) => !/id/i.test(h) && /pegawai|nama|staff|karyawan/i.test(h)
+        );
+        const idxJmlTrx = headers.findIndex((h) => /jml\s*transaksi|jumlah\s*transaksi/i.test(h));
+        const idxJmlLay = headers.findIndex((h) => /jml\s*layanan|jumlah\s*layanan/i.test(h));
+        const idxBruto = headers.findIndex((h) => /omzet\s*bruto|omset\s*bruto|bruto/i.test(h));
+        const idxNetto = headers.findIndex((h) => /omzet\s*netto|omset\s*netto|netto/i.test(h));
+        const idxKomisi = headers.findIndex((h) => /^komisi$/i.test(h));
+
+        const idPegawai = String(cells[idxIdPegawai !== -1 ? idxIdPegawai : 1] || '').trim();
+        const nama = cleanStaffName(cells[idxNama !== -1 ? idxNama : 2] || '');
+        if (!nama || /^total|grand total$/i.test(nama)) continue;
+
+        const jmlTransaksi = cleanRupiah(cells[idxJmlTrx !== -1 ? idxJmlTrx : 3]);
+        const jmlLayanan = cleanRupiah(cells[idxJmlLay !== -1 ? idxJmlLay : 4]);
+        const omzetBruto = cleanRupiah(cells[idxBruto !== -1 ? idxBruto : 6]);
+        const omzetNetto = cleanRupiah(cells[idxNetto !== -1 ? idxNetto : 7]);
+        const komisiVal = cleanRupiah(cells[idxKomisi !== -1 ? idxKomisi : 8]);
+
+        if (omzetBruto === 0 && omzetNetto === 0 && komisiVal === 0 && jmlTransaksi === 0) continue;
+
+        const mapKey = `${yyyymmdd}__${cleanBranchName.toLowerCase()}__${idPegawai || nama.toLowerCase()}`;
+        const existing = aggregatedKomisiMap.get(mapKey) || {
+          tanggal: mmddyyyy,
+          tanggalISO: yyyymmdd,
+          cabang: cleanBranchName,
+          id_pegawai: idPegawai,
+          pegawai: nama,
+          nama,
+          jml_transaksi: 0,
+          jml_layanan: 0,
+          omzet_bruto: 0,
+          omzet_netto: 0,
+          omset: 0,
+          komisi: 0
+        };
+        if (!existing.id_pegawai && idPegawai) existing.id_pegawai = idPegawai;
+        existing.jml_transaksi += jmlTransaksi;
+        existing.jml_layanan += jmlLayanan;
+        existing.omzet_bruto += omzetBruto;
+        existing.omzet_netto += omzetNetto;
+        existing.omset += omzetNetto || omzetBruto;
+        existing.komisi += komisiVal;
+        aggregatedKomisiMap.set(mapKey, existing);
+        branchKomisiCount++;
       }
 
-      log(`--- [Hari ${dayIdx + 1}/${targetDates.length}] Menarik Data Tanggal ${ddmmyyyy} (${yyyymmdd}) ---`);
-
-      const aggregatedKomisiMap = new Map();
-      const dayTransaksiProdMap = new Map();
-
-      // TAHAP 1: AMBIL REPORT KOMISI (Per Cabang, Per Tanggal)
-      for (const branch of branchList) {
-        const cleanBranchName = branch.label.replace(/^Flow\s*-\s*/i, '').trim();
-        log(`[Report Komisi - ${ddmmyyyy}] Cabang ${branch.label}...`);
-
-        await page.goto(`${baseUrl}/boss/index?page=report-komisi`, {
-          waitUntil: 'domcontentloaded',
-          timeout: 45000
-        });
-        await page.waitForTimeout(1800);
-
-        const isKomisiPage = await page.evaluate(() =>
-          document.body.innerText.toLowerCase().includes('komisi')
-        );
-        if (!isKomisiPage) {
-          const komisiLink = await page.$('a:has-text("Report Komisi"), a[href*="komisi"]');
-          if (komisiLink) {
-            await komisiLink.click();
-            await page.waitForTimeout(2200);
-          }
+      // B. Tarik Report Transaksi Produk langsung dari JSON API data_table.php
+      const prodUrl = `${baseUrl}/boss/pages/report/report-transaksi/data_table.php?mulai=${yyyymmdd}&akhir=${yyyymmdd}&item_type=product&length=2147483647`;
+      const prodResp = await fetch(prodUrl, {
+        headers: {
+          Cookie: cookieHeader,
+          'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36'
         }
+      });
+      const prodJson = await prodResp.json().catch(() => ({ data: [] }));
+      const prodRows = Array.isArray(prodJson?.data) ? prodJson.data : [];
 
-        await selectBranchOnPage(branch.value, branch.label);
-        await fillDateAndClickGo(ddmmyyyy, false);
+      let branchProdCount = 0;
+      for (const trx of prodRows) {
+        // Lewati transaksi yang berstatus Void ('n')
+        if (String(trx.service_status || 'y').toLowerCase() === 'n') continue;
+        const noInvoice = String(trx.service_no_inv || '').trim();
+        const items = Array.isArray(trx.items) ? trx.items : [];
 
-        // Set pelacak halaman agar tidak membaca halaman DataTables yang sama dua kali (Anti-Double)
-        const seenPageSignatures = new Set();
-        let hasNextPage = true;
-        while (hasNextPage) {
-          const rowsOnPage = await page.evaluate(() => {
-            const table = document.querySelector('table');
-            if (!table) return [];
-            const headers = Array.from(table.querySelectorAll('thead th')).map((th) =>
-              (th.textContent || '').trim().toLowerCase()
-            );
-            const bodyRows = Array.from(table.querySelectorAll('tbody tr'));
-            return bodyRows.map((tr) => {
-              const cells = Array.from(tr.querySelectorAll('td')).map((td) =>
-                (td.innerText || td.textContent || '').trim()
-              );
-              return { headers, cells };
-            });
-          });
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          const itemName = String(item.barang_nama || item.package_name || '').trim();
+          const skuCode = String(item.barang_kode || '').trim();
+          const staffName = cleanStaffName(item.terapis_name || '');
+          const qty = cleanRupiah(item.service_qty) || 1;
+          const harga = cleanRupiah(item.harga_item);
 
-          const pageSig = JSON.stringify(rowsOnPage.map((r) => r.cells));
-          if (seenPageSignatures.has(pageSig)) {
-            break;
-          }
-          seenPageSignatures.add(pageSig);
+          // Hanya masukkan transaksi produk yang ada nama pegawainya (terapis_name)
+          if (!itemName || !staffName) continue;
 
-          for (const r of rowsOnPage) {
-            const { headers, cells } = r;
-            if (!cells || cells.length < 3) continue;
-            if (cells.length === 1 || /no data|tidak ada data|kosong/i.test(cells[0])) continue;
-
-            const idxIdPegawai = headers.findIndex((h) =>
-              /id\s*pegawai|id\s*staff|id\s*karyawan|^id$|nik/i.test(h)
-            );
-            const idxNama = headers.findIndex(
-              (h) =>
-                /^(pegawai|nama|staff|karyawan|terapis|stylist)/i.test(h) ||
-                (!/id/i.test(h) && /pegawai|nama|staff|karyawan/i.test(h))
-            );
-            const idxJmlTransaksi = headers.findIndex((h) =>
-              /jml\s*transaksi|jumlah\s*transaksi|transaksi/i.test(h)
-            );
-            const idxJmlLayanan = headers.findIndex((h) =>
-              /jml\s*layanan|jumlah\s*layanan|layanan|item/i.test(h)
-            );
-            const idxOmzetBruto = headers.findIndex((h) =>
-              /bruto|omzet\s*bruto|omset\s*bruto/i.test(h)
-            );
-            const idxOmzetNetto = headers.findIndex((h) =>
-              /netto|omzet\s*netto|omset\s*netto/i.test(h)
-            );
-            const idxOmsetGeneric = headers.findIndex((h) =>
-              /omset|omzet|total harga|penjualan/i.test(h)
-            );
-            const idxKomisi = headers.findIndex((h) => /komisi|nominal komisi/i.test(h));
-
-            const rawIdPegawai =
-              idxIdPegawai !== -1
-                ? cells[idxIdPegawai]
-                : cells.length >= 7 && /^\d+$/.test(cells[0])
-                ? cells[0]
-                : cells.length >= 8 && /^\d+$/.test(cells[1])
-                ? cells[1]
-                : '';
-
-            const rawNama =
-              idxNama !== -1
-                ? cells[idxNama]
-                : cells.length >= 7 && /^\d+$/.test(cells[0])
-                ? cells[1]
-                : cells[1] || '';
-
-            const rawJmlTrx =
-              idxJmlTransaksi !== -1
-                ? cells[idxJmlTransaksi]
-                : cells.length >= 7
-                ? cells[cells.length - 5]
-                : '0';
-
-            const rawJmlLay =
-              idxJmlLayanan !== -1
-                ? cells[idxJmlLayanan]
-                : cells.length >= 7
-                ? cells[cells.length - 4]
-                : '0';
-
-            const rawBruto =
-              idxOmzetBruto !== -1
-                ? cells[idxOmzetBruto]
-                : cells.length >= 7
-                ? cells[cells.length - 3]
-                : idxOmsetGeneric !== -1
-                ? cells[idxOmsetGeneric]
-                : '0';
-
-            const rawNetto =
-              idxOmzetNetto !== -1
-                ? cells[idxOmzetNetto]
-                : cells.length >= 7
-                ? cells[cells.length - 2]
-                : rawBruto;
-
-            const rawKomisi =
-              idxKomisi !== -1 ? cells[idxKomisi] : cells[cells.length - 1] || '0';
-
-            const nama = cleanStaffName(rawNama);
-            if (!nama || /^total|grand total$/i.test(nama)) continue;
-
-            const idPegawai = String(rawIdPegawai || '').trim();
-            const jmlTransaksi = cleanRupiah(rawJmlTrx);
-            const jmlLayanan = cleanRupiah(rawJmlLay);
-            const omzetBruto = cleanRupiah(rawBruto);
-            const omzetNetto = cleanRupiah(rawNetto);
-            const komisiVal = cleanRupiah(rawKomisi);
-
-            if (omzetBruto === 0 && omzetNetto === 0 && komisiVal === 0 && jmlTransaksi === 0) continue;
-
-            // Kunci anti-double per tanggal + cabang + pegawai
-            const mapKey = `${yyyymmdd}__${cleanBranchName.toLowerCase()}__${idPegawai || nama.toLowerCase()}`;
-            const existing = aggregatedKomisiMap.get(mapKey) || {
+          const prodKey = `${yyyymmdd}__${cleanBranchName.toLowerCase()}__${noInvoice}__${i}__${staffName.toLowerCase()}__${itemName.toLowerCase()}`;
+          if (!dayTransaksiProdMap.has(prodKey)) {
+            dayTransaksiProdMap.set(prodKey, {
               tanggal: mmddyyyy,
               tanggalISO: yyyymmdd,
+              no_invoice: noInvoice,
               cabang: cleanBranchName,
-              id_pegawai: idPegawai,
-              pegawai: nama,
-              nama,
-              jml_transaksi: 0,
-              jml_layanan: 0,
-              omzet_bruto: 0,
-              omzet_netto: 0,
-              omset: 0,
+              pegawai: staffName,
+              nama: staffName,
+              sku: skuCode,
+              item: itemName,
+              produk: itemName,
+              jumlah: qty,
+              harga_item: harga,
+              total_harga: qty * harga,
               komisi: 0
-            };
-            if (!existing.id_pegawai && idPegawai) existing.id_pegawai = idPegawai;
-            existing.jml_transaksi += jmlTransaksi;
-            existing.jml_layanan += jmlLayanan;
-            existing.omzet_bruto += omzetBruto;
-            existing.omzet_netto += omzetNetto;
-            existing.omset += omzetNetto || omzetBruto;
-            existing.komisi += komisiVal;
-            aggregatedKomisiMap.set(mapKey, existing);
-          }
-
-          const nextClicked = await page.evaluate(() => {
-            const nextBtn = document.querySelector(
-              '.paginate_button.next:not(.disabled), li.next:not(.disabled) a'
-            );
-            if (nextBtn) {
-              nextBtn.click();
-              return true;
-            }
-            return false;
-          });
-          if (nextClicked) {
-            await page.waitForTimeout(1000);
-          } else {
-            hasNextPage = false;
-          }
-        }
-      }
-
-      // TAHAP 2: AMBIL REPORT TRANSAKSI PRODUK (Filter Kategori -> Produk)
-      for (const branch of branchList) {
-        const cleanBranchName = branch.label.replace(/^Flow\s*-\s*/i, '').trim();
-        log(`[Report Transaksi Produk - ${ddmmyyyy}] Cabang ${branch.label}...`);
-
-        await page.goto(`${baseUrl}/boss/index?page=report-transaksi`, {
-          waitUntil: 'domcontentloaded',
-          timeout: 45000
-        });
-        await page.waitForTimeout(1800);
-
-        await selectBranchOnPage(branch.value, branch.label);
-        await fillDateAndClickGo(ddmmyyyy, true);
-
-        const seenProdPageSignatures = new Set();
-        let hasNextPage = true;
-        while (hasNextPage) {
-          const rowsOnPage = await page.evaluate(() => {
-            const table = document.querySelector('table');
-            if (!table) return [];
-            const headers = Array.from(table.querySelectorAll('thead th')).map((th) =>
-              (th.textContent || '').trim().toLowerCase()
-            );
-            const bodyRows = Array.from(table.querySelectorAll('tbody tr'));
-            return bodyRows.map((tr) => {
-              const cells = Array.from(tr.querySelectorAll('td')).map((td) =>
-                (td.innerText || td.textContent || '').trim()
-              );
-              return { headers, cells };
             });
-          });
-
-          const pageSig = JSON.stringify(rowsOnPage.map((r) => r.cells));
-          if (seenProdPageSignatures.has(pageSig)) {
-            break;
-          }
-          seenProdPageSignatures.add(pageSig);
-
-          for (const r of rowsOnPage) {
-            const { headers, cells } = r;
-            if (!cells || cells.length < 5) continue;
-            if (/no data|tidak ada data|kosong/i.test(cells[0])) continue;
-
-            const idxInv = headers.findIndex((h) => h.includes('invoice'));
-            const idxItem = headers.findIndex((h) => h === 'item' || h.includes('produk'));
-            const idxKomisiStaff = headers.findIndex((h) => h === 'komisi' || h.includes('staff'));
-            const idxJumlah = headers.findIndex((h) => h.includes('jumlah') || h.includes('qty'));
-            const idxHarga = headers.findIndex((h) => h.includes('harga item') || h === 'harga');
-
-            const noInvoice = (cells[idxInv !== -1 ? idxInv : 1] || '').trim();
-            const itemCell = cells[idxItem !== -1 ? idxItem : 3] || '';
-            const staffCell = cells[idxKomisiStaff !== -1 ? idxKomisiStaff : 4] || '';
-            const qtyCell = cells[idxJumlah !== -1 ? idxJumlah : 5] || '1';
-            const hargaCell = cells[idxHarga !== -1 ? idxHarga : 6] || '0';
-
-            const itemLines = itemCell
-              .split(/\r?\n/)
-              .map((s) => s.replace(/^\d+\.\s*/, '').trim())
-              .filter(Boolean);
-            const staffLines = staffCell
-              .split(/\r?\n/)
-              .map((s) => cleanStaffName(s))
-              .filter(Boolean);
-            const qtyLines = qtyCell
-              .split(/\r?\n/)
-              .map((s) => cleanRupiah(s) || 1);
-            const hargaLines = hargaCell
-              .split(/\r?\n/)
-              .map((s) => cleanRupiah(s));
-
-            const count = Math.max(itemLines.length, 1);
-            for (let i = 0; i < count; i++) {
-              const itemName = itemLines[i] || itemLines[0] || '';
-              const staffName = staffLines[i] || staffLines[0] || '';
-              const qty = qtyLines[i] || qtyLines[0] || 1;
-              const harga = hargaLines[i] || hargaLines[0] || 0;
-              if (!itemName && !staffName) continue;
-
-              // Kunci anti-double transaksi produk per invoice + sub-baris
-              const prodKey = `${yyyymmdd}__${cleanBranchName.toLowerCase()}__${noInvoice}__${i}__${staffName.toLowerCase()}__${itemName.toLowerCase()}`;
-              if (!dayTransaksiProdMap.has(prodKey)) {
-                dayTransaksiProdMap.set(prodKey, {
-                  tanggal: mmddyyyy,
-                  tanggalISO: yyyymmdd,
-                  no_invoice: noInvoice,
-                  cabang: cleanBranchName,
-                  pegawai: staffName,
-                  nama: staffName,
-                  item: itemName,
-                  produk: itemName,
-                  jumlah: qty,
-                  harga_item: harga,
-                  total_harga: qty * harga,
-                  komisi: 0
-                });
-              }
-            }
-          }
-
-          const nextClicked = await page.evaluate(() => {
-            const nextBtn = document.querySelector(
-              '.paginate_button.next:not(.disabled), li.next:not(.disabled) a'
-            );
-            if (nextBtn) {
-              nextBtn.click();
-              return true;
-            }
-            return false;
-          });
-          if (nextClicked) {
-            await page.waitForTimeout(1000);
-          } else {
-            hasNextPage = false;
+            branchProdCount++;
           }
         }
       }
-
-      const dayKomisiList = Array.from(aggregatedKomisiMap.values());
-      const dayProdukList = Array.from(dayTransaksiProdMap.values());
-
-      combinedImportKomisi.push(...dayKomisiList);
-      combinedTransaksiProd.push(...dayProdukList);
 
       log(
-        `Selesai tanggal ${ddmmyyyy}: ${dayKomisiList.length} rekap komisi karyawan & ${dayProdukList.length} transaksi produk.`
+        `[${cleanBranchName} - ${ddmmyyyy}] ${branchKomisiCount} komisi pegawai, ${branchProdCount} item produk.`
       );
-
-      const dayPayload = {
-        tanggal: mmddyyyy,
-        tanggalISO: yyyymmdd,
-        tanggalDisplay: ddmmyyyy,
-        importKomisi: dayKomisiList,
-        transaksiProd: dayProdukList
-      };
-      dayResults.push(dayPayload);
-
-      if (options.onDayResult) {
-        await options.onDayResult(dayPayload);
-      }
     }
 
-    log(
-      `=== SELESAI TOTAL (${targetDates.length} Hari): ${combinedImportKomisi.length} baris Import Komisi & ${combinedTransaksiProd.length} baris Transaksi Produk ===`
-    );
+    const dayKomisiList = Array.from(aggregatedKomisiMap.values());
+    const dayProdukList = Array.from(dayTransaksiProdMap.values());
 
-    return {
-      status: 'sukses',
-      tanggal: dayResults.length === 1 ? dayResults[0].tanggal : `${firstISO} s/d ${lastISO}`,
-      tanggalISO: dayResults.length === 1 ? dayResults[0].tanggalISO : lastISO,
-      startDate: firstISO,
-      endDate: lastISO,
-      totalDays: targetDates.length,
-      importKomisi: combinedImportKomisi,
-      transaksiProd: combinedTransaksiProd,
-      dayResults,
-      logs
+    combinedImportKomisi.push(...dayKomisiList);
+    combinedTransaksiProd.push(...dayProdukList);
+
+    const dayPayload = {
+      tanggal: mmddyyyy,
+      tanggalISO: yyyymmdd,
+      tanggalDisplay: ddmmyyyy,
+      importKomisi: dayKomisiList,
+      transaksiProd: dayProdukList
     };
-  } finally {
-    await browser.close();
+    dayResults.push(dayPayload);
+
+    if (options.onDayResult) {
+      await options.onDayResult(dayPayload);
+    }
   }
+
+  log(
+    `=== SELESAI TOTAL (${targetDates.length} Hari): ${combinedImportKomisi.length} baris Import Komisi & ${combinedTransaksiProd.length} baris Transaksi Produk ===`
+  );
+
+  return {
+    status: 'sukses',
+    tanggal: dayResults.length === 1 ? dayResults[0].tanggal : `${firstISO} s/d ${lastISO}`,
+    tanggalISO: dayResults.length === 1 ? dayResults[0].tanggalISO : lastISO,
+    startDate: firstISO,
+    endDate: lastISO,
+    totalDays: targetDates.length,
+    importKomisi: combinedImportKomisi,
+    transaksiProd: combinedTransaksiProd,
+    dayResults,
+    logs
+  };
 }
 
 // Jika dijalankan langsung dari terminal VPS:

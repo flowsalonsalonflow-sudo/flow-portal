@@ -72,6 +72,7 @@ function doGet(e){
       case "get_all_history": return getAllHistory();
       case "get_all_salary_data": return getAllSalaryData(e);
       case "export_full_database": return exportFullDatabase(e);
+      case "deduplicate_pos_kluto": return deduplicatePosKluto(e.parameter || {});
       default: return response({ status:"error", message:"Action tidak valid" });
     }
   }catch(err){
@@ -95,6 +96,7 @@ function doPost(e){
       case "submit_transfer": return submitTransfer(p);
       case "delete_transfer": return deleteTransfer(p);
       case "sync_pos_kluto": return syncPosKluto(p);
+      case "deduplicate_pos_kluto": return deduplicatePosKluto(p);
       default: return response({ status:"error", message:"Post type invalid" });
     }
   }catch(err){
@@ -743,6 +745,7 @@ function getAllSalaryData(e) {
       });
 
       let totalOmsetLayananMonth = 0;
+      let totalOmsetProdukMonth = 0;
       let totalKomisiLayananMonth = 0;
       let totalKomisiProdukMonth = 0;
 
@@ -753,6 +756,7 @@ function getAllSalaryData(e) {
         pt_from_import_komisi += points;
 
         totalOmsetLayananMonth += netLayanan;
+        totalOmsetProdukMonth += group.prod;
 
         // Calculate product commission based on rules
         let dailyKomisiProduk = 0;
@@ -795,6 +799,20 @@ function getAllSalaryData(e) {
 
       payoutKomisiLayanan = hasReachedTarget ? totalKomisiLayananMonth : 0;
       payoutKomisiProduk = isPKL ? 0 : totalKomisiProdukMonth;
+
+      user._computedOmsetLayanan = totalOmsetLayananMonth;
+      user._computedOmsetProduk = totalOmsetProdukMonth;
+      user._computedTotalProductsSold = totalProductPointsSold;
+      user._computedHasReachedTarget = hasReachedTarget;
+      user._computedTargetLayananVal = targetLayananVal;
+      user._computedTotalKomisiLayananRaw = totalKomisiLayananMonth;
+    } else {
+      user._computedOmsetLayanan = 0;
+      user._computedOmsetProduk = 0;
+      user._computedTotalProductsSold = 0;
+      user._computedHasReachedTarget = false;
+      user._computedTargetLayananVal = target_omset > 0 ? target_omset : 0;
+      user._computedTotalKomisiLayananRaw = 0;
     }
 
     const pt_total = (pt_from_sheet > 0) ? pt_from_sheet : ((pt_from_import_komisi > 0) ? pt_from_import_komisi : pt_total_base);
@@ -949,8 +967,36 @@ function getAllSalaryData(e) {
 
     const gajiAktual = (pendapatanKehadiran + pendapatanDisiplin + pendapatanUangMakan + totalKomisi + totalKomisiTambahan + payoutKomisiLayanan + payoutKomisiProduk + pointRp + bonusAbsen) - (potonganWeekend + potongan12Weekday + potongan12Weekend);
 
+    const formattedImportKomisi = userImportKomisi.map(r => {
+      const omzetNetto = cleanNum(r.omzet_netto || r.omset_netto || r.Omzet_Netto || r.Omset_Netto || r["Omzet Netto"] || 0);
+      const omzetBruto = cleanNum(r.omzet_bruto || r.omset_bruto || r.Omzet_Bruto || r.Omset_Bruto || r["Omzet Bruto"] || 0);
+      const omsetFallback = cleanNum(r.omset || r.Omset || r.Omzet || 0);
+      return {
+        tanggal: r.tanggal || r.Tanggal || r.waktu || r.Waktu || r.tgl || r.date || r.Date || "",
+        cabang: r.cabang || r.Cabang || "",
+        id_pegawai: r.id_pegawai || r["ID Pegawai"] || r.idpegawai || "",
+        pegawai: r.pegawai || r.Pegawai || r.nama || r.Nama || "",
+        jml_transaksi: cleanNum(r.jml_transaksi || r["Jml Transaksi"] || r.jmltransaksi || 0),
+        jml_layanan: cleanNum(r.jml_layanan || r["Jml Layanan"] || r.jmllayanan || 0),
+        omzet_bruto: omzetBruto || omsetFallback,
+        omzet_netto: omzetNetto || omzetBruto || omsetFallback,
+        omset: omzetNetto || omzetBruto || omsetFallback,
+        komisi: cleanNum(r.komisi || r.Komisi || 0)
+      };
+    });
+
+    const formattedTransaksiProd = userTransaksiProd.map(r => ({
+      tanggal: r.tanggal || r.Tanggal || r.waktu || r.Waktu || r.tgl || r.date || r.Date || "",
+      harga_item: cleanNum(r.harga_item || r.Harga_Item || r.harga || r.total_harga || r.total || 0),
+      jumlah: cleanNum(r.jumlah || r.Jumlah || r.qty || r.Qty || 1),
+      sku: r.sku || r.SKU || "",
+      item: r.produk || r.Produk || r.item || r.Item || r.nama_produk || r.Nama_Produk || "",
+      komisi: cleanNum(r.komisi || r.Komisi || 0)
+    }));
+
     return {
       nama: user.nama, email: email, jabatan: user.jabatan,
+      joinDate: joinDateStr, join_date: joinDateStr, timestamp: joinDateStr, keluar_tgl: outDateStr,
       gaji_pokok: g_pokok, gaji_harian: Math.round(gajiHarian),
       target_omset: target_omset,
       hadir: totalKehadiran, disiplin: stats.hadirDisiplin, telat: stats.hadirTelatWeekday + stats.hadirTelatWeekend,
@@ -967,6 +1013,17 @@ function getAllSalaryData(e) {
       komisi_produk: payoutKomisiProduk,
       komisi_list: userKomisiItems,
       komisi_tambahan_list: userKomisiTambahanItems,
+      import_komisi: formattedImportKomisi,
+      transaksi_prod: formattedTransaksiProd,
+      point_produk: pointProduk,
+      total_omset_layanan: user._computedOmsetLayanan || 0,
+      total_omset_produk: user._computedOmsetProduk || 0,
+      total_omset: (user._computedOmsetLayanan || 0) + (user._computedOmsetProduk || 0),
+      total_products_sold: user._computedTotalProductsSold || 0,
+      has_reached_target: user._computedHasReachedTarget || false,
+      target_layanan_val: user._computedTargetLayananVal || 0,
+      total_komisi_layanan_raw: user._computedTotalKomisiLayananRaw || 0,
+      _hasFullDetails: true,
       total_kasbon: totalKasbon, kasbon_list: userKasbonItems,
       total_transferred: totalTransferred,
       transfer_list: userTransferItems,
@@ -2422,145 +2479,362 @@ function exportFullDatabase(e) {
  * - p.importKomisi: [{ tanggal, nama, cabang, omset, komisi }] (sudah ditotal per tanggal per karyawan)
  * - p.transaksiProd: [{ tanggal, no_invoice, cabang, pegawai, item, jumlah, harga_item, total_harga, komisi }]
  */
+function toKlutoDateKeyBackend(val) {
+  if (!val) return "";
+  const s = String(val).trim();
+  const isoMatch = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (isoMatch) {
+    return isoMatch[1] + "-" + String(isoMatch[2]).padStart(2, '0') + "-" + String(isoMatch[3]).padStart(2, '0');
+  }
+  const d = parseDateBackend(val);
+  if (!d) return "";
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, '0') + "-" + String(d.getDate()).padStart(2, '0');
+}
+
 function syncPosKluto(p) {
-  const ss = getSS();
-  if (!ss) return response({ status: "error", message: "Spreadsheet tidak dapat diakses." });
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(25000);
+  } catch (e) {}
 
-  const targetDateObj = parseDateBackend(p.tanggal || new Date());
-  const targetDateKey = targetDateObj
-    ? (targetDateObj.getFullYear() + "-" + String(targetDateObj.getMonth() + 1).padStart(2, '0') + "-" + String(targetDateObj.getDate()).padStart(2, '0'))
-    : "";
+  try {
+    const ss = getSS();
+    if (!ss) return response({ status: "error", message: "Spreadsheet tidak dapat diakses." });
 
-  let addedKomisi = 0;
-  let addedProduk = 0;
+    const defaultDateKey = toKlutoDateKeyBackend(p.tanggalISO || p.tanggal || new Date());
 
-  // 1. Simpan ke tab "Import Komisi" Lengkap 9 Kolom:
-  // Tanggal | Cabang | ID Pegawai | Pegawai | Jml Transaksi | Jml Layanan | Omzet Bruto | Omzet Netto | Komisi
-  if (Array.isArray(p.importKomisi) && p.importKomisi.length > 0) {
-    let shKom = ss.getSheetByName("Import Komisi");
-    if (!shKom) {
-      shKom = ss.insertSheet("Import Komisi");
-      shKom.appendRow([
-        "Tanggal",
-        "Cabang",
-        "ID Pegawai",
-        "Pegawai",
-        "Jml Transaksi",
-        "Jml Layanan",
-        "Omzet Bruto",
-        "Omzet Netto",
-        "Komisi"
-      ]);
-      shKom.getRange(1, 1, 1, 9).setFontWeight("bold");
+    let addedKomisi = 0;
+    let removedDuplicateKomisi = 0;
+    let addedProduk = 0;
+    let removedDuplicateProduk = 0;
+
+    // 1. Simpan ke tab "Import Komisi" Lengkap 9 Kolom (Anti-Double Batch):
+    // Tanggal | Cabang | ID Pegawai | Pegawai | Jml Transaksi | Jml Layanan | Omzet Bruto | Omzet Netto | Komisi
+    if (Array.isArray(p.importKomisi) && p.importKomisi.length > 0) {
+      let shKom = ss.getSheetByName("Import Komisi");
+      if (!shKom) {
+        shKom = ss.insertSheet("Import Komisi");
+        shKom.appendRow([
+          "Tanggal",
+          "Cabang",
+          "ID Pegawai",
+          "Pegawai",
+          "Jml Transaksi",
+          "Jml Layanan",
+          "Omzet Bruto",
+          "Omzet Netto",
+          "Komisi"
+        ]);
+        shKom.getRange(1, 1, 1, 9).setFontWeight("bold");
+      }
+
+      const rows = shKom.getDataRange().getValues();
+      const headers = rows[0].map(function(h) { return String(h).toLowerCase().trim(); });
+      const numCols = Math.max(headers.length, 9);
+      const idxTgl = headers.findIndex(function(h) { return h.indexOf("tanggal") !== -1 || h.indexOf("waktu") !== -1 || h.indexOf("date") !== -1; });
+      const idxCabang = headers.findIndex(function(h) { return h.indexOf("cabang") !== -1 || h.indexOf("outlet") !== -1; });
+      const idxIdPeg = headers.findIndex(function(h) { return h.indexOf("id") !== -1 && (h.indexOf("pegawai") !== -1 || h.indexOf("staff") !== -1 || h.indexOf("pos") !== -1); });
+      const idxNama = headers.findIndex(function(h) { return h.indexOf("id") === -1 && (h.indexOf("pegawai") !== -1 || h.indexOf("nama") !== -1 || h.indexOf("karyawan") !== -1); });
+      const idxJmlTrx = headers.findIndex(function(h) { return h.indexOf("transaksi") !== -1; });
+      const idxJmlLay = headers.findIndex(function(h) { return h.indexOf("layanan") !== -1; });
+      const idxBruto = headers.findIndex(function(h) { return h.indexOf("bruto") !== -1; });
+      const idxNetto = headers.findIndex(function(h) { return h.indexOf("netto") !== -1 || (h.indexOf("omset") !== -1 && h.indexOf("bruto") === -1) || (h.indexOf("omzet") !== -1 && h.indexOf("bruto") === -1); });
+      const idxKomisi = headers.findIndex(function(h) { return h.indexOf("komisi") !== -1; });
+
+      // Buat daftar kunci item baru yang akan di-insert
+      const incomingKeys = {};
+      p.importKomisi.forEach(function(item) {
+        const dKey = toKlutoDateKeyBackend(item.tanggalISO || item.tanggal || defaultDateKey);
+        const cabKey = String(item.cabang || "").toLowerCase().trim();
+        const idKey = String(item.id_pegawai || "").trim();
+        const namaKey = String(item.pegawai || item.nama || "").toLowerCase().trim();
+        if (dKey) {
+          if (idKey) incomingKeys[dKey + "__" + cabKey + "__id:" + idKey] = true;
+          if (namaKey) incomingKeys[dKey + "__" + cabKey + "__nm:" + namaKey] = true;
+        }
+      });
+
+      const headerRow = rows[0].slice(0, numCols);
+      while (headerRow.length < numCols) headerRow.push("");
+      const keptRows = [headerRow];
+      const seenExistingKeys = {};
+
+      for (let r = 1; r < rows.length; r++) {
+        const row = rows[r];
+        const rDateKey = toKlutoDateKeyBackend(row[idxTgl !== -1 ? idxTgl : 0]);
+        const rCabang = idxCabang !== -1 ? String(row[idxCabang] || "").toLowerCase().trim() : "";
+        const rId = idxIdPeg !== -1 ? String(row[idxIdPeg] || "").trim() : "";
+        const rNama = String(row[idxNama !== -1 ? idxNama : 3] || "").toLowerCase().trim();
+
+        if (!rDateKey && !rNama && !rId) continue;
+
+        const keyById = rDateKey && rId ? (rDateKey + "__" + rCabang + "__id:" + rId) : "";
+        const keyByName = rDateKey && rNama ? (rDateKey + "__" + rCabang + "__nm:" + rNama) : "";
+
+        // 1. Jika baris lama cocok dengan data baru yang sedang di-sync, timpa (jangan masukkan baris lama)
+        if ((keyById && incomingKeys[keyById]) || (keyByName && incomingKeys[keyByName])) {
+          removedDuplicateKomisi++;
+          continue;
+        }
+
+        // 2. Anti-Double untuk baris lama yang sudah terlanjur kembar di sheet
+        const dedupKey = keyById || keyByName;
+        if (dedupKey && seenExistingKeys[dedupKey]) {
+          removedDuplicateKomisi++;
+          continue;
+        }
+        if (dedupKey) seenExistingKeys[dedupKey] = true;
+
+        const padded = row.slice(0, numCols);
+        while (padded.length < numCols) padded.push("");
+        keptRows.push(padded);
+      }
+
+      // Tambahkan baris baru (juga di-dedup antar item baru)
+      p.importKomisi.forEach(function(item) {
+        const dKey = toKlutoDateKeyBackend(item.tanggalISO || item.tanggal || defaultDateKey);
+        const cabKey = String(item.cabang || "").toLowerCase().trim();
+        const idKey = String(item.id_pegawai || "").trim();
+        const namaKey = String(item.pegawai || item.nama || "").toLowerCase().trim();
+        const dedupKey = dKey ? (dKey + "__" + cabKey + "__" + (idKey ? "id:" + idKey : "nm:" + namaKey)) : "";
+        if (dedupKey && seenExistingKeys[dedupKey]) return;
+        if (dedupKey) seenExistingKeys[dedupKey] = true;
+
+        const newRow = new Array(numCols).fill("");
+        const dVal = item.tanggal || p.tanggal || dKey || new Date();
+        const brutoVal = cleanNumBackend(item.omzet_bruto !== undefined ? item.omzet_bruto : (item.omset || 0));
+        const nettoVal = cleanNumBackend(item.omzet_netto !== undefined ? item.omzet_netto : (item.omset || brutoVal));
+
+        newRow[idxTgl !== -1 ? idxTgl : 0] = dVal;
+        newRow[idxCabang !== -1 ? idxCabang : 1] = item.cabang || "";
+        newRow[idxIdPeg !== -1 ? idxIdPeg : 2] = item.id_pegawai || "";
+        newRow[idxNama !== -1 ? idxNama : 3] = item.pegawai || item.nama || "";
+        newRow[idxJmlTrx !== -1 ? idxJmlTrx : 4] = cleanNumBackend(item.jml_transaksi || 0);
+        newRow[idxJmlLay !== -1 ? idxJmlLay : 5] = cleanNumBackend(item.jml_layanan || 0);
+        newRow[idxBruto !== -1 ? idxBruto : 6] = brutoVal;
+        newRow[idxNetto !== -1 ? idxNetto : 7] = nettoVal;
+        newRow[idxKomisi !== -1 ? idxKomisi : 8] = cleanNumBackend(item.komisi || 0);
+
+        keptRows.push(newRow);
+        addedKomisi++;
+      });
+
+      shKom.clearContents();
+      shKom.getRange(1, 1, keptRows.length, numCols).setValues(keptRows);
     }
 
-    const rows = shKom.getDataRange().getValues();
-    const headers = rows[0].map(function(h) { return String(h).toLowerCase().trim(); });
-    const idxTgl = headers.findIndex(function(h) { return h.indexOf("tanggal") !== -1 || h.indexOf("waktu") !== -1 || h.indexOf("date") !== -1; });
-    const idxCabang = headers.findIndex(function(h) { return h.indexOf("cabang") !== -1 || h.indexOf("outlet") !== -1; });
-    const idxIdPeg = headers.findIndex(function(h) { return h.indexOf("id") !== -1 && (h.indexOf("pegawai") !== -1 || h.indexOf("staff") !== -1 || h.indexOf("pos") !== -1); });
-    const idxNama = headers.findIndex(function(h) { return h.indexOf("id") === -1 && (h.indexOf("pegawai") !== -1 || h.indexOf("nama") !== -1 || h.indexOf("karyawan") !== -1); });
-    const idxJmlTrx = headers.findIndex(function(h) { return h.indexOf("transaksi") !== -1; });
-    const idxJmlLay = headers.findIndex(function(h) { return h.indexOf("layanan") !== -1; });
-    const idxBruto = headers.findIndex(function(h) { return h.indexOf("bruto") !== -1; });
-    const idxNetto = headers.findIndex(function(h) { return h.indexOf("netto") !== -1 || (h.indexOf("omset") !== -1 && h.indexOf("bruto") === -1) || (h.indexOf("omzet") !== -1 && h.indexOf("bruto") === -1); });
-    const idxKomisi = headers.findIndex(function(h) { return h.indexOf("komisi") !== -1; });
+    // 2. Simpan ke tab "Transaksi Prod" (Anti-Double Batch)
+    if (Array.isArray(p.transaksiProd) && p.transaksiProd.length > 0) {
+      let shProd = ss.getSheetByName("Transaksi Prod") || ss.getSheetByName("Transaksi Produk");
+      if (!shProd) {
+        shProd = ss.insertSheet("Transaksi Prod");
+        shProd.appendRow(["Tanggal", "No Invoice", "Pegawai", "Item", "Jumlah", "Harga Item", "Total Harga", "Komisi", "Cabang"]);
+        shProd.getRange(1, 1, 1, 9).setFontWeight("bold");
+      }
 
-    // Hapus baris lama di tanggal, cabang & karyawan yang sama agar tidak dobel jika robot dijalankan ulang
-    for (let r = rows.length - 1; r >= 1; r--) {
-      const rDate = parseDateBackend(rows[r][idxTgl !== -1 ? idxTgl : 0]);
-      if (!rDate) continue;
-      const rDateKey = rDate.getFullYear() + "-" + String(rDate.getMonth() + 1).padStart(2, '0') + "-" + String(rDate.getDate()).padStart(2, '0');
-      if (rDateKey === targetDateKey) {
-        const rNama = String(rows[r][idxNama !== -1 ? idxNama : 3] || "").toLowerCase().trim();
-        const rId = idxIdPeg !== -1 ? String(rows[r][idxIdPeg] || "").trim() : "";
-        const rCabang = idxCabang !== -1 ? String(rows[r][idxCabang] || "").toLowerCase().trim() : "";
-        const matchIncoming = p.importKomisi.some(function(item) {
-          const inNama = String(item.pegawai || item.nama || "").toLowerCase().trim();
-          const inId = String(item.id_pegawai || "").trim();
-          const inCab = String(item.cabang || "").toLowerCase().trim();
-          const samePerson = (rId && inId && rId === inId) || (rNama && inNama && rNama === inNama);
-          const sameBranch = !rCabang || !inCab || rCabang === inCab;
-          return samePerson && sameBranch;
-        });
-        if (matchIncoming) {
-          shKom.deleteRow(r + 1);
+      const rows = shProd.getDataRange().getValues();
+      const headers = rows[0].map(function(h) { return String(h).toLowerCase().trim(); });
+      const numCols = Math.max(headers.length, 9);
+      const idxTgl = headers.findIndex(function(h) { return h.indexOf("tanggal") !== -1 || h.indexOf("waktu") !== -1; });
+      const idxInv = headers.findIndex(function(h) { return h.indexOf("invoice") !== -1 || h.indexOf("nota") !== -1; });
+      const idxPeg = headers.findIndex(function(h) { return h.indexOf("pegawai") !== -1 || h.indexOf("nama") !== -1 || h.indexOf("karyawan") !== -1 || h === "komisi"; });
+      const idxItem = headers.findIndex(function(h) { return h.indexOf("item") !== -1 || h.indexOf("produk") !== -1; });
+      const idxQty = headers.findIndex(function(h) { return h.indexOf("jumlah") !== -1 || h.indexOf("qty") !== -1; });
+      const idxHarga = headers.findIndex(function(h) { return h.indexOf("harga_item") !== -1 || h.indexOf("harga item") !== -1 || h === "harga"; });
+      const idxTotal = headers.findIndex(function(h) { return h.indexOf("total") !== -1; });
+      const idxCabang = headers.findIndex(function(h) { return h.indexOf("cabang") !== -1; });
+
+      const syncedDatesMap = {};
+      if (defaultDateKey) syncedDatesMap[defaultDateKey] = true;
+      p.transaksiProd.forEach(function(item) {
+        const dKey = toKlutoDateKeyBackend(item.tanggalISO || item.tanggal || defaultDateKey);
+        if (dKey) syncedDatesMap[dKey] = true;
+      });
+
+      const headerRow = rows[0].slice(0, numCols);
+      while (headerRow.length < numCols) headerRow.push("");
+      const keptProdRows = [headerRow];
+      const seenProdKeys = {};
+
+      for (let r = 1; r < rows.length; r++) {
+        const row = rows[r];
+        const rDateKey = toKlutoDateKeyBackend(row[idxTgl !== -1 ? idxTgl : 0]);
+        if (rDateKey && syncedDatesMap[rDateKey]) {
+          removedDuplicateProduk++;
+          continue;
+        }
+        const rInv = idxInv !== -1 ? String(row[idxInv] || "").toLowerCase().trim() : "";
+        const rPeg = String(row[idxPeg !== -1 ? idxPeg : 2] || "").toLowerCase().trim();
+        const rItem = String(row[idxItem !== -1 ? idxItem : 3] || "").toLowerCase().trim();
+        const rQty = cleanNumBackend(row[idxQty !== -1 ? idxQty : 4] || 1);
+        const rHarga = cleanNumBackend(row[idxHarga !== -1 ? idxHarga : 5] || 0);
+        if (!rDateKey && !rPeg && !rItem) continue;
+
+        const pKey = rDateKey + "__" + rInv + "__" + rPeg + "__" + rItem + "__" + rQty + "__" + rHarga;
+        if (rInv && seenProdKeys[pKey]) {
+          removedDuplicateProduk++;
+          continue;
+        }
+        if (rInv) seenProdKeys[pKey] = true;
+
+        const padded = row.slice(0, numCols);
+        while (padded.length < numCols) padded.push("");
+        keptProdRows.push(padded);
+      }
+
+      p.transaksiProd.forEach(function(item) {
+        const dKey = toKlutoDateKeyBackend(item.tanggalISO || item.tanggal || defaultDateKey);
+        const inv = String(item.no_invoice || "").toLowerCase().trim();
+        const peg = String(item.pegawai || item.nama || "").toLowerCase().trim();
+        const itm = String(item.item || item.produk || "").toLowerCase().trim();
+        const qty = cleanNumBackend(item.jumlah || 1);
+        const hrg = cleanNumBackend(item.harga_item || 0);
+        const pKey = dKey + "__" + inv + "__" + peg + "__" + itm + "__" + qty + "__" + hrg;
+        if (inv && seenProdKeys[pKey]) return;
+        if (inv) seenProdKeys[pKey] = true;
+
+        const newRow = new Array(numCols).fill("");
+        newRow[idxTgl !== -1 ? idxTgl : 0] = item.tanggal || p.tanggal || dKey || new Date();
+        if (idxInv !== -1) newRow[idxInv] = item.no_invoice || "";
+        newRow[idxPeg !== -1 ? idxPeg : 2] = item.pegawai || item.nama || "";
+        newRow[idxItem !== -1 ? idxItem : 3] = item.item || item.produk || "";
+        newRow[idxQty !== -1 ? idxQty : 4] = qty;
+        newRow[idxHarga !== -1 ? idxHarga : 5] = hrg;
+        if (idxTotal !== -1) newRow[idxTotal] = cleanNumBackend(item.total_harga || (hrg * qty));
+        if (idxCabang !== -1) newRow[idxCabang] = item.cabang || "";
+        keptProdRows.push(newRow);
+        addedProduk++;
+      });
+
+      shProd.clearContents();
+      shProd.getRange(1, 1, keptProdRows.length, numCols).setValues(keptProdRows);
+    }
+
+    return response({
+      status: "sukses",
+      message: "Sinkronisasi POS Kluto berhasil disimpan (Anti-Double aktif).",
+      addedKomisi: addedKomisi,
+      removedDuplicateKomisi: removedDuplicateKomisi,
+      addedProduk: addedProduk,
+      removedDuplicateProduk: removedDuplicateProduk
+    });
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+/**
+ * Membersihkan seluruh baris duplikat (Anti-Double) di tab "Import Komisi" dan "Transaksi Prod"
+ */
+function deduplicatePosKluto(p) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(25000);
+  } catch (e) {}
+
+  try {
+    const ss = getSS();
+    if (!ss) return response({ status: "error", message: "Spreadsheet tidak dapat diakses." });
+
+    let removedKomisi = 0;
+    let totalKomisiAfter = 0;
+    let removedProduk = 0;
+    let totalProdukAfter = 0;
+
+    // 1. Bersihkan duplikat di "Import Komisi"
+    const shKom = ss.getSheetByName("Import Komisi");
+    if (shKom) {
+      const rows = shKom.getDataRange().getValues();
+      if (rows.length > 1) {
+        const headers = rows[0].map(function(h) { return String(h).toLowerCase().trim(); });
+        const numCols = rows[0].length;
+        const idxTgl = headers.findIndex(function(h) { return h.indexOf("tanggal") !== -1 || h.indexOf("waktu") !== -1 || h.indexOf("date") !== -1; });
+        const idxCabang = headers.findIndex(function(h) { return h.indexOf("cabang") !== -1 || h.indexOf("outlet") !== -1; });
+        const idxIdPeg = headers.findIndex(function(h) { return h.indexOf("id") !== -1 && (h.indexOf("pegawai") !== -1 || h.indexOf("staff") !== -1 || h.indexOf("pos") !== -1); });
+        const idxNama = headers.findIndex(function(h) { return h.indexOf("id") === -1 && (h.indexOf("pegawai") !== -1 || h.indexOf("nama") !== -1 || h.indexOf("karyawan") !== -1); });
+
+        // Simpan baris terbaru (dari bawah ke atas) jika ada tanggal + cabang + pegawai yang kembar
+        const seenKeys = {};
+        const uniqueReversed = [];
+        for (let r = rows.length - 1; r >= 1; r--) {
+          const row = rows[r];
+          const rDateKey = toKlutoDateKeyBackend(row[idxTgl !== -1 ? idxTgl : 0]);
+          const rCabang = idxCabang !== -1 ? String(row[idxCabang] || "").toLowerCase().trim() : "";
+          const rId = idxIdPeg !== -1 ? String(row[idxIdPeg] || "").trim() : "";
+          const rNama = String(row[idxNama !== -1 ? idxNama : 3] || "").toLowerCase().trim();
+          if (!rDateKey && !rNama && !rId) continue;
+
+          const key = rDateKey + "__" + rCabang + "__" + (rId ? "id:" + rId : "nm:" + rNama);
+          if (rDateKey && (rId || rNama) && seenKeys[key]) {
+            removedKomisi++;
+            continue;
+          }
+          if (rDateKey && (rId || rNama)) seenKeys[key] = true;
+          uniqueReversed.push(row);
+        }
+        uniqueReversed.reverse();
+        const finalRows = [rows[0]].concat(uniqueReversed);
+        totalKomisiAfter = uniqueReversed.length;
+        if (removedKomisi > 0) {
+          shKom.clearContents();
+          shKom.getRange(1, 1, finalRows.length, numCols).setValues(finalRows);
         }
       }
     }
 
-    p.importKomisi.forEach(function(item) {
-      const newRow = new Array(Math.max(headers.length, 9)).fill("");
-      const dVal = item.tanggal || p.tanggal || new Date();
-      const brutoVal = cleanNumBackend(item.omzet_bruto !== undefined ? item.omzet_bruto : (item.omset || 0));
-      const nettoVal = cleanNumBackend(item.omzet_netto !== undefined ? item.omzet_netto : (item.omset || brutoVal));
+    // 2. Bersihkan duplikat di "Transaksi Prod"
+    const shProd = ss.getSheetByName("Transaksi Prod") || ss.getSheetByName("Transaksi Produk");
+    if (shProd) {
+      const rows = shProd.getDataRange().getValues();
+      if (rows.length > 1) {
+        const headers = rows[0].map(function(h) { return String(h).toLowerCase().trim(); });
+        const numCols = rows[0].length;
+        const idxTgl = headers.findIndex(function(h) { return h.indexOf("tanggal") !== -1 || h.indexOf("waktu") !== -1; });
+        const idxInv = headers.findIndex(function(h) { return h.indexOf("invoice") !== -1 || h.indexOf("nota") !== -1; });
+        const idxPeg = headers.findIndex(function(h) { return h.indexOf("pegawai") !== -1 || h.indexOf("nama") !== -1 || h.indexOf("karyawan") !== -1 || h === "komisi"; });
+        const idxItem = headers.findIndex(function(h) { return h.indexOf("item") !== -1 || h.indexOf("produk") !== -1; });
+        const idxQty = headers.findIndex(function(h) { return h.indexOf("jumlah") !== -1 || h.indexOf("qty") !== -1; });
+        const idxHarga = headers.findIndex(function(h) { return h.indexOf("harga_item") !== -1 || h.indexOf("harga item") !== -1 || h === "harga"; });
 
-      newRow[idxTgl !== -1 ? idxTgl : 0] = dVal;
-      newRow[idxCabang !== -1 ? idxCabang : 1] = item.cabang || "";
-      newRow[idxIdPeg !== -1 ? idxIdPeg : 2] = item.id_pegawai || "";
-      newRow[idxNama !== -1 ? idxNama : 3] = item.pegawai || item.nama || "";
-      newRow[idxJmlTrx !== -1 ? idxJmlTrx : 4] = cleanNumBackend(item.jml_transaksi || 0);
-      newRow[idxJmlLay !== -1 ? idxJmlLay : 5] = cleanNumBackend(item.jml_layanan || 0);
-      newRow[idxBruto !== -1 ? idxBruto : 6] = brutoVal;
-      newRow[idxNetto !== -1 ? idxNetto : 7] = nettoVal;
-      newRow[idxKomisi !== -1 ? idxKomisi : 8] = cleanNumBackend(item.komisi || 0);
+        const seenProd = {};
+        const uniqueProdReversed = [];
+        for (let r = rows.length - 1; r >= 1; r--) {
+          const row = rows[r];
+          const rDateKey = toKlutoDateKeyBackend(row[idxTgl !== -1 ? idxTgl : 0]);
+          const rInv = idxInv !== -1 ? String(row[idxInv] || "").toLowerCase().trim() : "";
+          const rPeg = String(row[idxPeg !== -1 ? idxPeg : 2] || "").toLowerCase().trim();
+          const rItem = String(row[idxItem !== -1 ? idxItem : 3] || "").toLowerCase().trim();
+          const rQty = cleanNumBackend(row[idxQty !== -1 ? idxQty : 4] || 1);
+          const rHarga = cleanNumBackend(row[idxHarga !== -1 ? idxHarga : 5] || 0);
+          if (!rDateKey && !rPeg && !rItem) continue;
 
-      shKom.appendRow(newRow);
-      addedKomisi++;
-    });
-  }
-
-  // 2. Simpan ke tab "Transaksi Prod"
-  if (Array.isArray(p.transaksiProd) && p.transaksiProd.length > 0) {
-    let shProd = ss.getSheetByName("Transaksi Prod") || ss.getSheetByName("Transaksi Produk");
-    if (!shProd) {
-      shProd = ss.insertSheet("Transaksi Prod");
-      shProd.appendRow(["Tanggal", "No Invoice", "Pegawai", "Item", "Jumlah", "Harga Item", "Total Harga", "Komisi", "Cabang"]);
-      shProd.getRange(1, 1, 1, 9).setFontWeight("bold");
-    }
-
-    const rows = shProd.getDataRange().getValues();
-    const headers = rows[0].map(function(h) { return String(h).toLowerCase().trim(); });
-    const idxTgl = headers.findIndex(function(h) { return h.indexOf("tanggal") !== -1 || h.indexOf("waktu") !== -1; });
-    const idxInv = headers.findIndex(function(h) { return h.indexOf("invoice") !== -1 || h.indexOf("nota") !== -1; });
-    const idxPeg = headers.findIndex(function(h) { return h.indexOf("pegawai") !== -1 || h.indexOf("nama") !== -1 || h.indexOf("karyawan") !== -1 || h === "komisi"; });
-    const idxItem = headers.findIndex(function(h) { return h.indexOf("item") !== -1 || h.indexOf("produk") !== -1; });
-    const idxQty = headers.findIndex(function(h) { return h.indexOf("jumlah") !== -1 || h.indexOf("qty") !== -1; });
-    const idxHarga = headers.findIndex(function(h) { return h.indexOf("harga_item") !== -1 || h.indexOf("harga item") !== -1 || h === "harga"; });
-    const idxTotal = headers.findIndex(function(h) { return h.indexOf("total") !== -1; });
-    const idxCabang = headers.findIndex(function(h) { return h.indexOf("cabang") !== -1; });
-
-    // Hapus data produk tanggal yang sama jika di-sync ulang agar tidak ganda
-    if (targetDateKey) {
-      for (let r = rows.length - 1; r >= 1; r--) {
-        const rDate = parseDateBackend(rows[r][idxTgl !== -1 ? idxTgl : 0]);
-        if (!rDate) continue;
-        const rDateKey = rDate.getFullYear() + "-" + String(rDate.getMonth() + 1).padStart(2, '0') + "-" + String(rDate.getDate()).padStart(2, '0');
-        if (rDateKey === targetDateKey) {
-          shProd.deleteRow(r + 1);
+          const key = rDateKey + "__" + rInv + "__" + rPeg + "__" + rItem + "__" + rQty + "__" + rHarga;
+          if (rDateKey && seenProd[key]) {
+            removedProduk++;
+            continue;
+          }
+          if (rDateKey) seenProd[key] = true;
+          uniqueProdReversed.push(row);
+        }
+        uniqueProdReversed.reverse();
+        const finalProdRows = [rows[0]].concat(uniqueProdReversed);
+        totalProdukAfter = uniqueProdReversed.length;
+        if (removedProduk > 0) {
+          shProd.clearContents();
+          shProd.getRange(1, 1, finalProdRows.length, numCols).setValues(finalProdRows);
         }
       }
     }
 
-    p.transaksiProd.forEach(function(item) {
-      const newRow = new Array(Math.max(headers.length, 7)).fill("");
-      newRow[idxTgl !== -1 ? idxTgl : 0] = item.tanggal || p.tanggal || new Date();
-      if (idxInv !== -1) newRow[idxInv] = item.no_invoice || "";
-      newRow[idxPeg !== -1 ? idxPeg : 2] = item.pegawai || item.nama || "";
-      newRow[idxItem !== -1 ? idxItem : 3] = item.item || item.produk || "";
-      newRow[idxQty !== -1 ? idxQty : 4] = cleanNumBackend(item.jumlah || 1);
-      newRow[idxHarga !== -1 ? idxHarga : 5] = cleanNumBackend(item.harga_item || 0);
-      if (idxTotal !== -1) newRow[idxTotal] = cleanNumBackend(item.total_harga || (cleanNumBackend(item.harga_item || 0) * cleanNumBackend(item.jumlah || 1)));
-      if (idxCabang !== -1) newRow[idxCabang] = item.cabang || "";
-      shProd.appendRow(newRow);
-      addedProduk++;
+    return response({
+      status: "sukses",
+      message: "Pembersihan data ganda selesai: " + removedKomisi + " baris komisi dobel & " + removedProduk + " baris produk dobel dihapus.",
+      removedKomisi: removedKomisi,
+      totalKomisiAfter: totalKomisiAfter,
+      removedProduk: removedProduk,
+      totalProdukAfter: totalProdukAfter
     });
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
   }
-
-  return response({
-    status: "sukses",
-    message: "Sinkronisasi POS Kluto berhasil disimpan.",
-    addedKomisi: addedKomisi,
-    addedProduk: addedProduk
-  });
 }

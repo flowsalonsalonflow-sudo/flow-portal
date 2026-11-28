@@ -84,6 +84,14 @@ let klutoSyncStatus = {
   isRunning: false,
   lastRunAt: null,
   lastSuccessDate: null,
+  startDate: null,
+  endDate: null,
+  currentDayIndex: 0,
+  totalDays: 0,
+  currentDateISO: null,
+  currentDateDisplay: null,
+  totalKomisiSaved: 0,
+  totalProdukSaved: 0,
   lastResultSummary: null,
   lastError: null,
   logs: []
@@ -158,50 +166,88 @@ async function flushBackgroundGasQueue() {
 
 setInterval(flushBackgroundGasQueue, 15000);
 
-// Fungsi menjalankan Robot Kluto POS & mengirim hasilnya ke Google Sheets + Cache VPS
-async function executeKlutoSyncJob(targetDateStr) {
+// Fungsi menjalankan Robot Kluto POS (1 tanggal atau Rentang Tanggal) & mengirim ke Google Sheets per hari
+async function executeKlutoSyncJob(jobOpts = {}) {
   if (klutoSyncStatus.isRunning) {
     return { status: 'error', message: 'Robot Kluto sedang berjalan.' };
   }
+  const opts = typeof jobOpts === 'string' ? { targetDateStr: jobOpts } : jobOpts || {};
+  const startStr = opts.startDate || opts.startDateStr || opts.tanggal || opts.targetDateStr || '';
+  const endStr = opts.endDate || opts.endDateStr || startStr || '';
+
   klutoSyncStatus.isRunning = true;
   klutoSyncStatus.lastRunAt = new Date().toISOString();
+  klutoSyncStatus.startDate = startStr || 'Hari Ini/Kemarin';
+  klutoSyncStatus.endDate = endStr || startStr || 'Hari Ini/Kemarin';
+  klutoSyncStatus.currentDayIndex = 0;
+  klutoSyncStatus.totalDays = 0;
+  klutoSyncStatus.currentDateISO = null;
+  klutoSyncStatus.currentDateDisplay = null;
+  klutoSyncStatus.totalKomisiSaved = 0;
+  klutoSyncStatus.totalProdukSaved = 0;
   klutoSyncStatus.lastError = null;
   klutoSyncStatus.logs = [];
   saveKlutoStatus();
 
   try {
+    let lastGasResponse = null;
+
     const result = await runKlutoSync({
-      targetDateStr,
+      startDateStr: startStr,
+      endDateStr: endStr,
       onLog: (line) => {
         klutoSyncStatus.logs.push(line);
-        if (klutoSyncStatus.logs.length > 100) klutoSyncStatus.logs.shift();
+        if (klutoSyncStatus.logs.length > 150) klutoSyncStatus.logs.shift();
+        saveKlutoStatus();
+      },
+      onProgress: (prog) => {
+        klutoSyncStatus.currentDayIndex = prog.currentDayIndex;
+        klutoSyncStatus.totalDays = prog.totalDays;
+        klutoSyncStatus.currentDateISO = prog.currentDateISO;
+        klutoSyncStatus.currentDateDisplay = prog.currentDateDisplay;
+        saveKlutoStatus();
+      },
+      onDayResult: async (dayRes) => {
+        // Segera kirim hasil hari tersebut ke Google Sheets (Anti-Double aktif di backend_script.gs)
+        const gasResp = await fetch(GAS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            api: 'sync_pos_kluto',
+            tanggal: dayRes.tanggal,
+            tanggalISO: dayRes.tanggalISO,
+            importKomisi: dayRes.importKomisi,
+            transaksiProd: dayRes.transaksiProd
+          })
+        });
+        const gasJson = await gasResp.json().catch(() => ({}));
+        lastGasResponse = gasJson;
+
+        klutoSyncStatus.totalKomisiSaved += dayRes.importKomisi.length;
+        klutoSyncStatus.totalProdukSaved += dayRes.transaksiProd.length;
+        klutoSyncStatus.lastSuccessDate = dayRes.tanggalISO;
+
+        const syncLogMsg = `[Sheets Sync ${dayRes.tanggalISO}] Tersimpan ${dayRes.importKomisi.length} baris Komisi & ${dayRes.transaksiProd.length} baris Produk (Anti-Double: ${gasJson.removedDuplicateKomisi || 0} ditimpa).`;
+        klutoSyncStatus.logs.push(syncLogMsg);
+        if (klutoSyncStatus.logs.length > 150) klutoSyncStatus.logs.shift();
+
+        // Bersihkan cache gaji di VPS setiap 1 hari selesai agar HR Hub langsung terupdate
+        dbCache.salaryCache = {};
+        dbCache.lastSyncedAt = new Date().toISOString();
+        saveDb();
+        saveKlutoStatus();
       }
     });
 
-    // Kirim ke Google Sheets via sync_pos_kluto
-    const gasResp = await fetch(GAS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        api: 'sync_pos_kluto',
-        tanggal: result.tanggal,
-        importKomisi: result.importKomisi,
-        transaksiProd: result.transaksiProd
-      })
-    });
-    const gasJson = await gasResp.json().catch(() => ({}));
-
-    // Bersihkan cache gaji agar tarikan berikutnya langsung memakai komisi terbaru
-    dbCache.salaryCache = {};
-    dbCache.lastSyncedAt = new Date().toISOString();
-    saveDb();
-
-    klutoSyncStatus.lastSuccessDate = result.tanggalISO;
+    klutoSyncStatus.lastSuccessDate = result.endDate || result.tanggalISO;
     klutoSyncStatus.lastResultSummary = {
       tanggal: result.tanggal,
+      startDate: result.startDate,
+      endDate: result.endDate,
+      totalDays: result.totalDays,
       totalKaryawanKomisi: result.importKomisi.length,
       totalTransaksiProduk: result.transaksiProd.length,
-      gasSync: gasJson
+      gasSync: lastGasResponse
     };
     saveKlutoStatus();
     return { status: 'sukses', ...klutoSyncStatus.lastResultSummary };
@@ -304,11 +350,15 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET') {
       const shouldRun = parsedUrl.searchParams.get('run') === '1' || parsedUrl.searchParams.get('run') === 'true';
       const targetTgl = parsedUrl.searchParams.get('tanggal') || undefined;
+      const startDate = parsedUrl.searchParams.get('startDate') || targetTgl || undefined;
+      const endDate = parsedUrl.searchParams.get('endDate') || startDate || undefined;
       if (shouldRun && !klutoSyncStatus.isRunning) {
-        executeKlutoSyncJob(targetTgl).catch((e) => console.error('Manual Kluto trigger error:', e));
+        executeKlutoSyncJob({ startDate, endDate, tanggal: targetTgl }).catch((e) =>
+          console.error('Manual Kluto trigger error:', e)
+        );
         return sendJson(res, 200, {
           status: 'sukses',
-          message: `Robot POS Kluto sedang berjalan menarik data tanggal ${targetTgl || 'hari ini/kemarin'}. Refresh halaman ini beberapa detik lagi untuk melihat log progresnya.`,
+          message: `Robot POS Kluto sedang berjalan menarik data periode ${startDate || 'hari ini/kemarin'}${endDate && endDate !== startDate ? ' s/d ' + endDate : ''}.`,
           ...klutoSyncStatus
         });
       }
@@ -320,7 +370,21 @@ const server = http.createServer(async (req, res) => {
       try {
         body = JSON.parse(rawBody || '{}');
       } catch (_) {}
-      const result = await executeKlutoSyncJob(body.tanggal);
+      const startDate = body.startDate || body.tanggal || undefined;
+      const endDate = body.endDate || startDate || undefined;
+      if (body.async !== false) {
+        if (!klutoSyncStatus.isRunning) {
+          executeKlutoSyncJob({ startDate, endDate }).catch((e) =>
+            console.error('Manual Kluto POST trigger error:', e)
+          );
+        }
+        return sendJson(res, 200, {
+          status: 'sukses',
+          message: `Robot POS Kluto mulai menarik data ${startDate || 'hari ini'}${endDate && endDate !== startDate ? ' s/d ' + endDate : ''} di latar belakang.`,
+          ...klutoSyncStatus
+        });
+      }
+      const result = await executeKlutoSyncJob({ startDate, endDate });
       return sendJson(res, 200, result);
     }
   }
@@ -351,6 +415,10 @@ const server = http.createServer(async (req, res) => {
         const idPegawai = (parsedUrl.searchParams.get('id_pegawai') || '').trim();
         const forceRefresh = parsedUrl.searchParams.get('force') === '1';
         const qs = parsedUrl.searchParams.toString();
+
+        if (action === 'kluto_sync_status') {
+          return sendJson(res, 200, { status: 'sukses', ...klutoSyncStatus, isVpsActive: true });
+        }
 
         const fetchInitialFromGas = async () => {
           const upstream = await fetch(`${GAS_URL}?${qs}`);
@@ -461,15 +529,64 @@ const server = http.createServer(async (req, res) => {
           }
         }
 
-        // Teruskan GET lainnya ke GAS dengan fallback cache (abaikan parameter cb agar cache efektif)
+        if (action === 'get_all_salary_data') {
+          const allSalaryKey = `all_salary__${periode}`;
+          const fetchAllSalaryFromGas = async () => {
+            const upstream = await fetch(`${GAS_URL}?${qs}`);
+            let data = await upstream.json();
+            if (data && data.status === 'sukses' && Array.isArray(data.data)) {
+              const hasAnyImportKomisi = data.data.some(
+                (d) => Array.isArray(d.import_komisi) && d.import_komisi.length > 0
+              );
+              if (!hasAnyImportKomisi && BACKUP_GAS_URL && GAS_URL !== BACKUP_GAS_URL) {
+                try {
+                  const bRes = await fetch(`${BACKUP_GAS_URL}?${qs}`);
+                  const bData = await bRes.json();
+                  if (bData && bData.status === 'sukses' && Array.isArray(bData.data) && bData.data.length > 0) {
+                    data = bData;
+                  }
+                } catch (_) {}
+              }
+              dbCache.salaryCache[allSalaryKey] = data;
+              saveDb();
+            }
+            return data;
+          };
+
+          const cachedAll = dbCache.salaryCache[allSalaryKey];
+          if (!forceRefresh && cachedAll && cachedAll.status === 'sukses' && Array.isArray(cachedAll.data) && cachedAll.data.length > 0) {
+            fetchAllSalaryFromGas().catch(() => {});
+            return sendJson(res, 200, cachedAll);
+          }
+          try {
+            const data = await fetchAllSalaryFromGas();
+            return sendJson(res, 200, data);
+          } catch (e) {
+            if (cachedAll) return sendJson(res, 200, cachedAll);
+            throw e;
+          }
+        }
+
+        // Teruskan GET lainnya (termasuk get_all_history) ke GAS dengan SWR & fallback cache
         const cleanParams = new URLSearchParams(parsedUrl.searchParams);
         cleanParams.delete('cb');
         const cacheKey = `${action}__${cleanParams.toString()}`;
-        try {
+        const fetchGenericFromGas = async () => {
           const upstream = await fetch(`${GAS_URL}?${qs}`);
           const data = await upstream.json();
-          dbCache.salaryCache[cacheKey] = data;
-          saveDb();
+          if (data && data.status !== 'error') {
+            dbCache.salaryCache[cacheKey] = data;
+            saveDb();
+          }
+          return data;
+        };
+
+        if (!forceRefresh && dbCache.salaryCache[cacheKey]) {
+          fetchGenericFromGas().catch(() => {});
+          return sendJson(res, 200, dbCache.salaryCache[cacheKey]);
+        }
+        try {
+          const data = await fetchGenericFromGas();
           return sendJson(res, 200, data);
         } catch (e) {
           if (dbCache.salaryCache[cacheKey]) {
@@ -526,6 +643,33 @@ const server = http.createServer(async (req, res) => {
             savedOnVps: true,
             photoUrl: vpsPhotoUrl
           });
+        }
+
+        // Trigger Robot Kluto Rentang Tanggal dari HR Hub via /api/backend
+        if (postType === 'kluto_sync_trigger') {
+          const startDate = payload.startDate || payload.tanggal || '';
+          const endDate = payload.endDate || startDate || '';
+          if (klutoSyncStatus.isRunning) {
+            return sendJson(res, 200, {
+              status: 'running',
+              message: 'Robot Kluto sedang berjalan menarik data. Mohon tunggu hingga selesai.',
+              ...klutoSyncStatus
+            });
+          }
+          executeKlutoSyncJob({ startDate, endDate }).catch((e) =>
+            console.error('Kluto sync trigger from HR Hub error:', e)
+          );
+          return sendJson(res, 200, {
+            status: 'sukses',
+            message: `Robot POS Kluto mulai menarik data ${startDate}${endDate && endDate !== startDate ? ' s/d ' + endDate : ''}.`,
+            ...klutoSyncStatus
+          });
+        }
+
+        // Bersihkan cache gaji di VPS jika deduplicate_pos_kluto dipanggil
+        if (postType === 'deduplicate_pos_kluto') {
+          dbCache.salaryCache = {};
+          saveDb();
         }
 
         // Untuk POST lainnya, teruskan ke Google Sheets

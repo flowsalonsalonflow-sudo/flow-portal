@@ -293,6 +293,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
     },
     {
       label:
+        'HR Hub',
+      page:
+        Page.HRHub,
+      image:
+        'https://flowsalon.id/absenku/gaji.png'
+    },
+    {
+      label:
         'Setting',
       page:
         Page.Settings,
@@ -359,7 +367,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   item.page
                 )
               }
-              className={`flex flex-col items-center gap-3 active:scale-95 ${i === 6 ? 'col-span-3 justify-self-center' : ''}`}
+              className="flex flex-col items-center gap-3 active:scale-95"
             >
               <div className="ios-icon-frame shadow-2xl">
                 <img

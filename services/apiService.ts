@@ -537,15 +537,47 @@ export const api = {
     return null;
   },
 
-  getAllSalaryData: async (periode: string) => {
-    if (!isConfigured()) return [];
+  getAllHistory: async () => {
+    if (!isConfigured()) return { employees: [], history: [], hariKhusus: [], hariLibur: [], hariIzin: [], transfers: [] };
     try {
-      const res = await fetchWithTimeout(`${GAS_URL}?action=get_all_salary_data&periode=${encodeURIComponent(periode)}&cb=${Date.now()}`);
-      if (res && res.status === 'sukses') return res.data || [];
+      const res = await fetchWithTimeout(`${GAS_URL}?action=get_all_history&cb=${Date.now()}`, {}, 50000, 1);
+      if (res && res.status !== 'error') return res;
+    } catch (err) {
+      console.error("Gagal fetch getAllHistory:", err);
+    }
+    return { error: 'Gagal memuat data karyawan & riwayat absen' };
+  },
+
+  getAllSalaryData: async (periode: string) => {
+    if (!isConfigured()) return { status: 'sukses', data: [] };
+    try {
+      const url = `${GAS_URL}?action=get_all_salary_data&periode=${encodeURIComponent(periode)}&cb=${Date.now()}`;
+      const res = await fetchWithTimeout(url, {}, 50000, 1);
+      if (res && res.status === 'sukses' && Array.isArray(res.data)) {
+        const hasAnyImportKomisi = res.data.some(
+          (d: any) => Array.isArray(d.import_komisi) && d.import_komisi.length > 0
+        );
+        // Jika sheet uji coba (TES VPS) belum mengembalikan array import_komisi, tarik & gabungkan dari BACKUP_GAS_URL
+        if (!hasAnyImportKomisi && BACKUP_GAS_URL && !url.includes(BACKUP_GAS_URL)) {
+          try {
+            const bRes = await fetchWithTimeout(
+              `${BACKUP_GAS_URL}?action=get_all_salary_data&periode=${encodeURIComponent(periode)}&cb=${Date.now()}`,
+              {},
+              45000,
+              0,
+              true
+            );
+            if (bRes && bRes.status === 'sukses' && Array.isArray(bRes.data) && bRes.data.length > 0) {
+              return bRes;
+            }
+          } catch (_) {}
+        }
+        return res;
+      }
     } catch (err) {
       console.error("Gagal fetch semua data gaji:", err);
     }
-    return [];
+    return { status: 'error', data: [] };
   },
 
   getAvailablePeriods: async (email: string) => {
@@ -604,11 +636,79 @@ export const api = {
     return await fetchWithTimeout(GAS_URL, { method: 'POST', body: JSON.stringify(payload) }, 65000, 0);
   },
 
+  updateAbsen: async (data: any) => {
+    return await fetchWithTimeout(GAS_URL, { method: 'POST', body: JSON.stringify({ ...data, type: 'update_absen' }) });
+  },
+
+  submitKasbon: async (data: any) => {
+    return await fetchWithTimeout(GAS_URL, { method: 'POST', body: JSON.stringify({ ...data, type: 'submit_kasbon' }) });
+  },
+
+  deleteKasbon: async (data: any) => {
+    return await fetchWithTimeout(GAS_URL, { method: 'POST', body: JSON.stringify({ ...data, type: 'delete_kasbon' }) });
+  },
+
+  submitTransfer: async (data: any) => {
+    return await fetchWithTimeout(GAS_URL, { method: 'POST', body: JSON.stringify({ ...data, type: 'submit_transfer' }) });
+  },
+
+  deleteTransfer: async (data: any) => {
+    return await fetchWithTimeout(GAS_URL, { method: 'POST', body: JSON.stringify({ ...data, type: 'delete_transfer' }) });
+  },
+
   kirimTugas: async (data: any) => {
     return await fetchWithTimeout(GAS_URL, { method: 'POST', body: JSON.stringify({ ...data, type: 'tugas' }) });
   },
   
   forgotPassword: async (email: string) => {
     return await fetchWithTimeout(`${GAS_URL}?action=forgot_password&email=${encodeURIComponent(email)}`);
+  },
+
+  getKlutoSyncStatus: async () => {
+    try {
+      const isVpsHost = typeof window !== 'undefined' && window.location.hostname === 'app.flowsalon.id';
+      const url = isVpsHost
+        ? `/absen/api/kluto-sync?cb=${Date.now()}`
+        : `${GAS_URL}?action=kluto_sync_status&cb=${Date.now()}`;
+      return await fetchWithTimeout(url, {}, 15000, 0, true);
+    } catch (err) {
+      return { status: 'offline', isRunning: false, logs: [] };
+    }
+  },
+
+  triggerKlutoSync: async (startDate: string, endDate: string) => {
+    const isVpsHost = typeof window !== 'undefined' && window.location.hostname === 'app.flowsalon.id';
+    const url = isVpsHost ? `/absen/api/kluto-sync` : GAS_URL;
+    return await fetchWithTimeout(
+      url,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'kluto_sync_trigger',
+          api: 'kluto_sync_trigger',
+          startDate,
+          endDate: endDate || startDate,
+          async: true
+        })
+      },
+      30000,
+      0
+    );
+  },
+
+  deduplicateKlutoSheet: async () => {
+    return await fetchWithTimeout(
+      GAS_URL,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          type: 'deduplicate_pos_kluto',
+          api: 'deduplicate_pos_kluto'
+        })
+      },
+      45000,
+      0
+    );
   }
 };
+

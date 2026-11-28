@@ -8,6 +8,7 @@ import { KnowledgeBase } from './pages/KnowledgeBase';
 import { Salary } from './pages/Salary';
 import { Tips } from './pages/Tips';
 import { Settings } from './pages/Settings';
+import { HRHub } from './pages/HRHub';
 import { Login } from './pages/Login';
 import { Layout } from './components/Layout';
 import { User } from './types';
@@ -22,7 +23,8 @@ export enum Page {
   Knowledge = 'knowledge', 
   Salary = 'salary',
   Tips = 'tips',
-  Settings = 'settings'
+  Settings = 'settings',
+  HRHub = 'hr-hub'
 }
 
 const toTitleCase = (str: string) => {
@@ -65,7 +67,16 @@ const parseDateSafe = (dateStr: any): Date | null => {
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
-  const [currentPage, setCurrentPage] = useState<Page>(Page.Dashboard);
+  const [currentPage, setCurrentPage] = useState<Page>(() => {
+    if (typeof window !== 'undefined' && (
+      window.location.pathname.startsWith('/hr') ||
+      window.location.search.includes('mode=hr') ||
+      window.location.hash === '#hr'
+    )) {
+      return Page.HRHub;
+    }
+    return Page.Dashboard;
+  });
   const companyBackRef = useRef<(() => boolean) | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<string>(() => {
     const d = new Date();
@@ -210,6 +221,34 @@ const App: React.FC = () => {
     }
   };
 
+  const isStandaloneHRRoute = typeof window !== 'undefined' && (
+    window.location.pathname.startsWith('/hr') ||
+    window.location.search.includes('mode=hr') ||
+    window.location.hash === '#hr'
+  );
+
+  if (isStandaloneHRRoute && !user) {
+    return (
+      <div className="min-h-screen bg-transparent">
+        <div 
+          className="fixed-bg"
+          style={{ backgroundImage: `url(${bgUrl})` }}
+        />
+        <div className="relative z-10 min-h-screen bg-transparent max-w-4xl mx-auto p-4 md:p-10">
+          <div className="flex items-center justify-between mb-6 px-2 pt-2">
+            <div className="flex items-center gap-3">
+              <img src="https://flowsalon.id/absenku/logo.png" className="h-7 filter brightness-200" />
+              <span className="text-[10px] font-medium uppercase tracking-[0.3em] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full">
+                HR Hub
+              </span>
+            </div>
+          </div>
+          <HRHub />
+        </div>
+      </div>
+    );
+  }
+
   if (!user) return <Login onLogin={handleLogin} />;
 
   const renderPage = () => {
@@ -236,6 +275,7 @@ const App: React.FC = () => {
       case Page.Salary: return <Salary user={user} joinDate={dynamicData?.joinDate || user?.joinDate || user?.timestamp || null} hariKhusus={dynamicData?.hariKhusus || []} hariLibur={dynamicData?.hariLibur || []} hariIzin={dynamicData?.hariIzin || []} selectedPeriod={selectedPeriod} onPeriodChange={setSelectedPeriod} onNavigate={handleNavigate} onToggleFocus={setIsFocusMode} />;
       case Page.Tips: return <Tips user={user} tipsData={dynamicData?.tips || []} onToggleFocus={setIsFocusMode} />;
       case Page.Settings: return <Settings user={user} currentBg={bgUrl} onUpdateBg={setBgUrl} />;
+      case Page.HRHub: return <HRHub />;
       default: return <Dashboard user={user} pesanManager={dynamicData?.pesanManager} isDataLoaded={!!dynamicData} isLoading={isInitialLoading} error={fetchError} onRetry={() => fetchGlobalData(user.email)} bgUrl={bgUrl} onNavigate={handleNavigate} onToggleFocus={setIsFocusMode} />;
     }
   };

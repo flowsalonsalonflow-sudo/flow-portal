@@ -28,6 +28,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activePage, user, onNa
             <NavItem active={activePage === Page.Checklist} onClick={() => onNavigate(Page.Checklist)} icon={<CheckCircleIcon />} label="Tugas" />
             <NavItem active={activePage === Page.Knowledge} onClick={() => onNavigate(Page.Knowledge)} icon={<BookOpenIcon />} label="SOP" />
             <NavItem active={activePage === Page.Salary} onClick={() => onNavigate(Page.Salary)} icon={<WalletIcon />} label="Gaji" />
+            <NavItem active={activePage === Page.HRHub} onClick={() => onNavigate(Page.HRHub)} icon={<BriefcaseIcon />} label="HR Hub" />
             <NavItem active={activePage === Page.Settings} onClick={() => onNavigate(Page.Settings)} icon={<SettingsIcon />} label="Setting" />
           </nav>
           <div className="p-6">
